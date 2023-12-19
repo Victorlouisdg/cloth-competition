@@ -1,0 +1,28 @@
+name: static type checking
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - ci-dev
+
+jobs:
+  mypy:
+    name: Run MyPy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: "3.10"
+    - name: install conda env with micromamba
+      uses: mamba-org/provision-with-micromamba@main
+      with:
+        channel-priority: strict
+        environment-file: environment.yaml
+        cache-env: true
+    - name: Run type checker
+      shell: bash -l {0}
+      run: |
+        mypy .
