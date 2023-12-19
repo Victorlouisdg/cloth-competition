@@ -20,7 +20,7 @@ jobs:
         build
         --user
     - name: Build a binary wheel and a source tarball
-      run: python3 -m build
+      run: python3 -m build cloth-tools --outdir dist/
     - name: Store the distribution packages
       uses: actions/upload-artifact@v3
       with:
