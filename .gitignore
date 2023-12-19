@@ -7,3 +7,4 @@
 **.ckpt
 **.pyc
 dist/
+build/

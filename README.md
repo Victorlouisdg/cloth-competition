@@ -21,10 +21,8 @@ pre-commit install
 
 **TODO**: Add installation of [airo-mono](https://github.com/airo-ugent/airo-mono/tree/main/airo-camera-toolkit) packages and [linen](https://github.com/Victorlouisdg/linen).
 
-## Development
-Releasing a new version of `cloth-tools`:
-* pip install --upgrade build twine
-* `cd cloth-tools`
-* Update the version in `pyproject.toml`.
-* python3 -m build
-* python3 -m twine upload dist/*
+## Releasing
+Releasing a new version of `cloth-tools` on PyPi, example:
+1. Update the version in `pyproject.toml`.
+2. ```git tag -a v0.1.0 -m "cloth-tools v0.1.0"```
+3. ```git push origin v0.1.0```
