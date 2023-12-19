@@ -1,14 +1,22 @@
-# cloth-competition
+![banner](https://airo.ugent.be/assets/img/cloth_competition_banner.jpg)
 
+# ICRA 2024 Cloth Competition
 
-## Local Development
+> :construction: This repository is under construction. :construction:
 
-### Local installation
+Official repository for the [ICRA 2024 Cloth Competition :shirt:](https://airo.ugent.be/cloth_competition/).
+This will contain:
+* The specification dataset format and expected output.
+* A notebook to get started.
+* The code for our data collection procedure.
 
-- clone this repo
-- create the conda environment `conda env create -f environment.yaml`
-- initialize the pre-commit hooks `pre-commit install`
+## Installation
 
+```
+git clone git@github.com:Victorlouisdg/cloth-competition.git
+cd cloth-competition
+conda env create -f environment.yaml
+pre-commit install
+```
 
-### Running formatting, linting and testing
-The makefile contains commands to make this convenient. Run using `make <command>`.
+**TODO**: Add installation of [airo-mono](https://github.com/airo-ugent/airo-mono/tree/main/airo-camera-toolkit) packages and [linen](https://github.com/Victorlouisdg/linen).

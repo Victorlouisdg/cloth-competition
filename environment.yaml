@@ -5,13 +5,18 @@
 # to update: conda env update -f environment.yaml
 name: cloth-competition
 channels:
-  - pytorch
   - conda-forge
+  - pytorch
+  - nvidia
 dependencies:
   - python=3.10
   - pytorch
-  - cudatoolkit=11.3
   - torchvision
+  - pytorch-cuda=12.1
+  - ffmpeg>=6.1.0
+  - x265
+  - opencv
+  - jupyter
   - pip
   - pip:
     - numpy

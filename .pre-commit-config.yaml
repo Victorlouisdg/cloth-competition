@@ -40,8 +40,3 @@ repos:
     hooks:
     -   id: flake8
         name: flake8 - linter
-
--   repo: https://github.com/terrencepreilly/darglint
-    rev: v1.8.1
-    hooks:
-    - id: darglint
