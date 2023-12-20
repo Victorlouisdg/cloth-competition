@@ -10,5 +10,4 @@ dist/
 build/
 notebooks/data/
 config
-dataset
 dataset_**

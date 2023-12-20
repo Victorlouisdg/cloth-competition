@@ -16,8 +16,8 @@ from loguru import logger
 def filter_and_crop_point_cloud(
     point_cloud: PointCloud,
     confidence_map: NumpyDepthMapType,
-    bounding_box=BoundingBox3DType,
-):
+    bounding_box: BoundingBox3DType,
+) -> PointCloud:
     """Filters and crops the point cloud to the region of interest.
 
     Args:
@@ -44,7 +44,7 @@ if __name__ == "__main__":
     window_name = "RGBD sample collection"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-    dataset_dir = "dataset"
+    dataset_dir = "dataset_0000"
     sample_index = 0
 
     while True:

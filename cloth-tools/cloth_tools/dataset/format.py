@@ -4,7 +4,7 @@ from pathlib import Path
 
 import cv2
 import open3d as o3d
-from airo_camera_toolkit.point_clouds.conversions import point_cloud_to_open3d
+from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.utils import ImageConverter
 from airo_dataset_tools.data_parsers.camera_intrinsics import CameraIntrinsics
 from airo_dataset_tools.data_parsers.pose import Pose
@@ -31,7 +31,7 @@ class CompetitionInputSample:
     camera_resolution: CameraResolutionType
 
 
-def save_competition_input_sample(sample: CompetitionInputSample, dataset_dir: str, sample_index: int):
+def save_competition_input_sample(sample: CompetitionInputSample, dataset_dir: str, sample_index: int) -> None:
     sample_dir = Path(dataset_dir) / f"sample_{sample_index:06d}"
     sample_dir.mkdir(parents=True, exist_ok=True)
     filenames = competition_input_sample_filenames(sample_index)
@@ -40,13 +40,17 @@ def save_competition_input_sample(sample: CompetitionInputSample, dataset_dir: s
     # Convert images from RGB to BGR
     image_left = ImageConverter.from_numpy_int_format(sample.image_left).image_in_opencv_format
     image_right = ImageConverter.from_numpy_int_format(sample.image_right).image_in_opencv_format
-    depth_image = ImageConverter.from_numpy_int_format(sample.depth_image).image_in_opencv_format
 
     cv2.imwrite(filepaths["image_left"], image_left)
     cv2.imwrite(filepaths["image_right"], image_right)
-    cv2.imwrite(filepaths["depth_image"], depth_image)
     cv2.imwrite(filepaths["depth_map"], sample.depth_map)
-    cv2.imwrite(filepaths["confidence_map"], sample.confidence_map)
+
+    if sample.confidence_map is not None:
+        cv2.imwrite(filepaths["confidence_map"], sample.confidence_map)
+
+    if sample.depth_image is not None:
+        depth_image = ImageConverter.from_numpy_int_format(sample.depth_image).image_in_opencv_format
+        cv2.imwrite(filepaths["depth_image"], depth_image)
 
     with open(filepaths["camera_intrinsics"], "w") as f:
         json.dump(
@@ -103,10 +107,14 @@ def load_competition_input_sample(dataset_dir: str, sample_index: int) -> Compet
         depth_image
     ).image_in_numpy_int_format  # in case it's not grayscale
 
+    pcd = o3d.t.io.read_point_cloud(filepaths["point_cloud"])
+    point_cloud = open3d_to_point_cloud(pcd)
+
     return CompetitionInputSample(
         image_left=image_left,
         image_right=image_right,
         depth_map=depth_map,
+        point_cloud=point_cloud,
         depth_image=depth_image,
         confidence_map=confidence_map,
         camera_pose=camera_pose,
