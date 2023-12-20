@@ -26,16 +26,29 @@ if __name__ == "__main__":
 
     # Setting up rerun
     rr.init(window_name, spawn=True)
-    rr.log("world/camera", rr.Pinhole(image_from_camera=camera.intrinsics_matrix(), resolution=camera.resolution))
     rr.log(
-        "world/camera", rr.Transform3D(translation=camera_pose_in_left[0:3, 3], mat3x3=camera_pose_in_left[0:3, 0:3])
+        "world/camera",
+        rr.Pinhole(image_from_camera=camera.intrinsics_matrix(), resolution=camera.resolution),
+    )
+    rr.log(
+        "world/camera",
+        rr.Transform3D(
+            translation=camera_pose_in_left[0:3, 3],
+            mat3x3=camera_pose_in_left[0:3, 0:3],
+        ),
     )
 
     for bbox_name, bbox in bboxes.items():
         bbox_mins, bbox_sizes = bbox_to_mins_and_sizes(bbox)
         bbox_color = bbox_colors[bbox_name]
-        rr.log(f"world/{bbox_name}", rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color))
-        rr.log(f"{bbox_name}/{bbox_name}", rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color))
+        rr.log(
+            f"world/{bbox_name}",
+            rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color),
+        )
+        rr.log(
+            f"{bbox_name}/{bbox_name}",
+            rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color),
+        )
 
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
@@ -52,10 +65,14 @@ if __name__ == "__main__":
         confidence_mask = (confidence_map <= 1.0).reshape(-1)  # Threshold and flatten
 
         point_cloud = open3d_to_point_cloud(pcd)
-        point_cloud_filtered = filter_point_cloud(point_cloud, confidence_mask)
+        point_cloud_filtered = filter_point_cloud(point_cloud, confidence_mask.nonzero())
 
         rr.log(
-            "world/point_cloud", rr.Points3D(positions=point_cloud_filtered.points, colors=point_cloud_filtered.colors)
+            "world/point_cloud",
+            rr.Points3D(
+                positions=point_cloud_filtered.points,
+                colors=point_cloud_filtered.colors,
+            ),
         )
 
         n_points_dict = {}
@@ -64,11 +81,17 @@ if __name__ == "__main__":
             point_cloud_cropped = crop_point_cloud(point_cloud_filtered, bbox)
             rr.log(
                 f"{bbox_name}/point_cloud",
-                rr.Points3D(positions=point_cloud_cropped.points, colors=point_cloud_cropped.colors),
+                rr.Points3D(
+                    positions=point_cloud_cropped.points,
+                    colors=point_cloud_cropped.colors,
+                ),
             )
 
             n_points = len(point_cloud_cropped.points)
-            rr.log(f"plot/{bbox_name}", rr.TimeSeriesScalar(n_points, color=bbox_colors[bbox_name]))
+            rr.log(
+                f"plot/{bbox_name}",
+                rr.TimeSeriesScalar(n_points, color=bbox_colors[bbox_name]),
+            )
 
             n_points_dict[bbox_name] = n_points
 

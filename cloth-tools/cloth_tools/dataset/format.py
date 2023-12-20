@@ -1,7 +1,10 @@
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import open3d as o3d
+from airo_camera_toolkit.point_clouds.conversions import point_cloud_to_open3d
 from airo_camera_toolkit.utils import ImageConverter
 from airo_dataset_tools.data_parsers.camera_intrinsics import CameraIntrinsics
 from airo_dataset_tools.data_parsers.pose import Pose
@@ -11,6 +14,7 @@ from airo_typing import (
     CameraResolutionType,
     NumpyDepthMapType,
     NumpyIntImageType,
+    PointCloud,
 )
 
 
@@ -19,11 +23,49 @@ class CompetitionInputSample:
     image_left: NumpyIntImageType
     image_right: NumpyIntImageType
     depth_map: NumpyDepthMapType
+    point_cloud: PointCloud
     depth_image: NumpyIntImageType | None  # Optional depth image for visualization
     confidence_map: NumpyDepthMapType | None  # Confidence of the depth map as returned by the ZED SDK
     camera_pose: CameraExtrinsicMatrixType
     camera_intrinsics: CameraIntrinsicsMatrixType
     camera_resolution: CameraResolutionType
+
+
+def save_competition_input_sample(sample: CompetitionInputSample, dataset_dir: str, sample_index: int):
+    sample_dir = Path(dataset_dir) / f"sample_{sample_index:06d}"
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    filenames = competition_input_sample_filenames(sample_index)
+    filepaths = {key: str(sample_dir / filename) for key, filename in filenames.items()}
+
+    # Convert images from RGB to BGR
+    image_left = ImageConverter.from_numpy_int_format(sample.image_left).image_in_opencv_format
+    image_right = ImageConverter.from_numpy_int_format(sample.image_right).image_in_opencv_format
+    depth_image = ImageConverter.from_numpy_int_format(sample.depth_image).image_in_opencv_format
+
+    cv2.imwrite(filepaths["image_left"], image_left)
+    cv2.imwrite(filepaths["image_right"], image_right)
+    cv2.imwrite(filepaths["depth_image"], depth_image)
+    cv2.imwrite(filepaths["depth_map"], sample.depth_map)
+    cv2.imwrite(filepaths["confidence_map"], sample.confidence_map)
+
+    with open(filepaths["camera_intrinsics"], "w") as f:
+        json.dump(
+            CameraIntrinsics.from_matrix_and_resolution(sample.camera_intrinsics, sample.camera_resolution).model_dump(
+                exclude_none=True
+            ),
+            f,
+            indent=4,
+        )
+
+    with open(filepaths["camera_pose"], "w") as f:
+        json.dump(
+            Pose.from_homogeneous_matrix(sample.camera_pose).model_dump(exclude_none=True),
+            f,
+            indent=4,
+        )
+
+    pcd = point_cloud_to_open3d(sample.point_cloud)
+    o3d.t.io.write_point_cloud(filepaths["point_cloud"], pcd)
 
 
 def load_competition_input_sample(dataset_dir: str, sample_index: int) -> CompetitionInputSample:
@@ -84,14 +126,15 @@ def competition_input_sample_filenames(sample_index: int) -> dict[str, str]:
     Returns:
         A dictionary of filenames.
     """
-    zero_padded_grasp_index = f"{sample_index:06d}"
+    sample_index_padded = f"{sample_index:06d}"
 
     return {
-        "image_left": f"image_left_{zero_padded_grasp_index}.png",
-        "image_right": f"image_right_{zero_padded_grasp_index}.png",
-        "depth_map": f"depth_map_{zero_padded_grasp_index}.tiff",
-        "depth_image": f"depth_image_{zero_padded_grasp_index}.png",
-        "confidence_map": f"confidence_map_{zero_padded_grasp_index}.tiff",
+        "image_left": f"image_left_{sample_index_padded}.png",
+        "image_right": f"image_right_{sample_index_padded}.png",
+        "depth_map": f"depth_map_{sample_index_padded}.tiff",
+        "point_cloud": f"point_cloud_{sample_index_padded}.ply",
+        "depth_image": f"depth_image_{sample_index_padded}.png",
+        "confidence_map": f"confidence_map_{sample_index_padded}.tiff",
         "camera_pose": "camera_pose.json",
         "camera_intrinsics": "camera_intrinsics.json",
         "camera_resolution": "camera_resolution.json",

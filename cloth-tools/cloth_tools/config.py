@@ -22,7 +22,7 @@ def get_config_dir() -> str:
     return os.environ[CONFIG_DIR]
 
 
-def load_camera_pose_in_left_and_right() -> Tuple[HomogeneousMatrixType, HomogeneousMatrixType]:
+def load_camera_pose_in_left_and_right() -> (Tuple[HomogeneousMatrixType, HomogeneousMatrixType]):
     """Load the camera pose in the left and right robot's base frame.
 
     Returns:
