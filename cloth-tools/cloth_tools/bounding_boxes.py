@@ -1,3 +1,5 @@
+from typing import Tuple
+
 from airo_typing import BoundingBox3DType
 
 
@@ -35,7 +37,9 @@ BBOX_CLOTH_ON_TABLE = bounding_box_between_robots(0.9, 0.6, 1.1, 0.02, 0.2)
 BBOX_CLOTH_IN_THE_AIR = bounding_box_between_robots(0.9, 0.4, 0.4, 0.20, 0.95)
 
 
-def bbox_to_mins_and_sizes(bounding_box: BoundingBox3DType) -> ((float, float, float), (float, float, float)):
+def bbox_to_mins_and_sizes(
+    bounding_box: BoundingBox3DType,
+) -> Tuple[Tuple[float, float, float], Tuple[float, float, float]]:
     """Convert a bounding box specified as the mix and max corners to the alternative mins and sizes format.
     This is the format used by Rerun.
 

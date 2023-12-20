@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Tuple
 
 from airo_dataset_tools.data_parsers.pose import Pose
 from airo_typing import HomogeneousMatrixType
@@ -21,7 +22,7 @@ def get_config_dir() -> str:
     return os.environ[CONFIG_DIR]
 
 
-def load_camera_pose_in_left_and_right() -> (HomogeneousMatrixType, HomogeneousMatrixType):
+def load_camera_pose_in_left_and_right() -> Tuple[HomogeneousMatrixType, HomogeneousMatrixType]:
     """Load the camera pose in the left and right robot's base frame.
 
     Returns:
