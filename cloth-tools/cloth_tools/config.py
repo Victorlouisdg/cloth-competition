@@ -2,8 +2,12 @@ import os
 from pathlib import Path
 from typing import Tuple
 
+import numpy as np
 from airo_dataset_tools.data_parsers.pose import Pose
-from airo_typing import HomogeneousMatrixType
+from airo_robots.grippers.hardware.robotiq_2f85_urcap import Robotiq2F85
+from airo_robots.manipulators.bimanual_position_manipulator import DualArmPositionManipulator
+from airo_robots.manipulators.hardware.ur_rtde import URrtde
+from airo_typing import CameraExtrinsicMatrixType, HomogeneousMatrixType
 
 CONFIG_DIR = "CLOTH_TOOLS_CONFIG_DIR"
 
@@ -35,3 +39,27 @@ def load_camera_pose_in_left_and_right() -> (Tuple[HomogeneousMatrixType, Homoge
         camera_pose_in_right = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
 
     return camera_pose_in_left, camera_pose_in_right
+
+
+def setup_dual_arm_ur5e(
+    camera_pose_in_left: CameraExtrinsicMatrixType,
+    camera_pose_in_right: CameraExtrinsicMatrixType,
+    ip_address_left: str = "10.42.0.163",
+    ip_address_right: str = "10.42.0.162",
+) -> DualArmPositionManipulator:
+    """Connect to the UR5e robots and Robotiq 2F-85 grippers. Sets the world frame to the base frame of the left robot.
+
+    Returns:
+        The initialized dual arm.
+    """
+    gripper_left = Robotiq2F85(ip_address_left)
+    robot_left = URrtde(ip_address_left, URrtde.UR3E_CONFIG, gripper_left)
+
+    gripper_right = Robotiq2F85(ip_address_right)
+    robot_right = URrtde(ip_address_right, URrtde.UR3E_CONFIG, gripper_right)
+
+    left_in_world = np.identity(4)
+    right_in_world = camera_pose_in_left @ np.linalg.inv(camera_pose_in_right)
+
+    dual_arm = DualArmPositionManipulator(robot_left, left_in_world, robot_right, right_in_world)
+    return dual_arm
