@@ -1,5 +1,3 @@
-from typing import Optional
-
 import click
 import cv2
 from airo_camera_toolkit.cameras.zed2i import Zed2i
@@ -16,13 +14,13 @@ from loguru import logger
 
 
 def collect_competition_input_samples(
-    camera: StereoRGBDCamera, camera_pose: CameraExtrinsicMatrixType, dataset_dir: str
+    camera: Zed2i, camera_pose: CameraExtrinsicMatrixType, dataset_dir: str | None = None
 ) -> str:
     """Collects samples of the input RGB-D data without moving the robots.
     This also means that no grasp labels are collected.
 
     Args:
-        camera: The camera.
+        camera: The camera. (Currently must be a ZED2i camera for the confidence map.)
         camera_pose: The camera pose in the world frame.
         dataset_dir: The directory the samples will be added to.
 
@@ -77,7 +75,7 @@ def collect_competition_input_samples(
 
 @click.command()
 @click.option("--dataset_dir", type=str)
-def collect_competition_input_samples_with_zed2i(dataset_dir: Optional[str] = None) -> str:
+def collect_competition_input_samples_with_zed2i(dataset_dir: str | None = None) -> str:
     """Collects samples of the competition input data with a ZED2i camera.
 
     Args:
