@@ -13,9 +13,7 @@ jobs:
       - name: install conda env with micromamba
         uses: mamba-org/setup-micromamba@v1.7.3
         with:
-          channel-priority: strict
           environment-file: environment.yaml
-          cache-env: true
       - name: Conda list
         shell: bash -l {0}
         run: conda list
