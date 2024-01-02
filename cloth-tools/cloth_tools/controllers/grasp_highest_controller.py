@@ -17,8 +17,12 @@ class GraspHighestController(Controller):
     def execute(self) -> None:
         dual_arm = self.station.dual_arm
 
-        dual_arm.left_manipulator.gripper.open()  # type: ignore
-        dual_arm.right_manipulator.gripper.open()  # type: ignore
+        # Mypy wants these asserts
+        assert dual_arm.left_manipulator.gripper is not None
+        assert dual_arm.right_manipulator.gripper is not None
+
+        dual_arm.left_manipulator.gripper.open()
+        dual_arm.right_manipulator.gripper.open()
 
 
 if __name__ == "__main__":
