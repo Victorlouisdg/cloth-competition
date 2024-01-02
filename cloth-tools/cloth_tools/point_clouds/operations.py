@@ -1,5 +1,14 @@
+import numpy as np
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud_mask, filter_point_cloud
-from airo_typing import BoundingBox3DType, NumpyDepthMapType, PointCloud
+from airo_typing import BoundingBox3DType, NumpyDepthMapType, PointCloud, PointCloudPositionsType
+
+
+def highest_point(points: PointCloudPositionsType) -> np.ndarray:
+    return points[np.argmax(points[:, 2])]
+
+
+def lowest_point(points: PointCloudPositionsType) -> np.ndarray:
+    return points[np.argmin(points[:, 2])]
 
 
 def filter_and_crop_point_cloud(

@@ -1,3 +1,4 @@
+import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e
 from cloth_tools.stations.dual_arm_station import DualArmStation
@@ -20,10 +21,14 @@ class CompetitionStation(DualArmStation):
 
         # Setting up the robots and grippers
         dual_arm = setup_dual_arm_ur5e(camera_pose_in_left, camera_pose_in_right)
+        super().__init__(dual_arm, camera, camera_pose)
+
+        # Adding additional attributes
+        self.home_joints_left = np.deg2rad([180, -135, 95, -50, -90, -90])
+        self.home_joints_right = np.deg2rad([-180, -45, -95, -130, 90, 90])
 
         # TODO add attribute for access to the drake scene / motion planning here
 
-        super().__init__(dual_arm, camera, camera_pose)
         logger.info("CompetitionStation initialized.")
 
 
