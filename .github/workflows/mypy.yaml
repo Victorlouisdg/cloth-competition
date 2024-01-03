@@ -20,6 +20,7 @@ jobs:
       uses: mamba-org/setup-micromamba@v1.7.3
       with:
         environment-file: environment.yaml
+        cache-environment: true
     - name: Run type checker
       shell: bash -l {0}
       run: |
