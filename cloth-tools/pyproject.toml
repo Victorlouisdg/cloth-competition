@@ -20,8 +20,8 @@ classifiers = [
 dependencies = [
     "numpy",
     "click",
-    "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing",
-    "airo-robots @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-robots"
+    "airo-typing @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-typing",
+    "airo-robots @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-robots"
 ]
 
 [project.urls]
