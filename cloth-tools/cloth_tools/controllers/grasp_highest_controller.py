@@ -198,7 +198,6 @@ if __name__ == "__main__":
     station = CompetitionStation()
 
     dual_arm = station.dual_arm
-
     # Move the arms to their home positions
     home_controller = HomeController(station)
     home_controller.execute()
