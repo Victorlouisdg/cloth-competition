@@ -21,6 +21,9 @@ jobs:
       with:
         environment-file: environment.yaml
         cache-environment: true
+    - name: Conda list
+      shell: bash -l {0}
+      run: conda list
     - name: Run type checker
       shell: bash -l {0}
       run: |
