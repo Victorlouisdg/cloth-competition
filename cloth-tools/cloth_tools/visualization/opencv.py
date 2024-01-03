@@ -33,7 +33,7 @@ def draw_pose(
     intrinsics: CameraIntrinsicsMatrixType,
     camera_pose: HomogeneousMatrixType,
     length: float = 0.1,
-):
+) -> None:
     """Draws a pose on an image. Image must be BGR to have correct axes colors.
 
     Args:
@@ -50,5 +50,4 @@ def draw_pose(
     charuco_se3 = SE3Container.from_homogeneous_matrix(frame_pose_in_camera)
     rvec = charuco_se3.orientation_as_rotation_vector
     tvec = charuco_se3.translation
-    image = cv2.drawFrameAxes(image, intrinsics, None, rvec, tvec, length)
-    return image
+    cv2.drawFrameAxes(image, intrinsics, None, rvec, tvec, length)

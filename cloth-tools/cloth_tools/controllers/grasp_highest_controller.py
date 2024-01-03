@@ -1,11 +1,19 @@
 import sys
+from typing import Any, Optional, Tuple
 
 import cv2
 import numpy as np
 import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils import ImageConverter
-from airo_typing import BoundingBox3DType, HomogeneousMatrixType, OpenCVIntImageType, Vector3DType
+from airo_typing import (
+    BoundingBox3DType,
+    HomogeneousMatrixType,
+    JointConfigurationType,
+    OpenCVIntImageType,
+    PointCloud,
+    Vector3DType,
+)
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.home_controller import HomeController
@@ -20,7 +28,7 @@ from linen.geometry.orientation import top_down_orientation
 from loguru import logger
 
 
-def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0.05):
+def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0.05) -> HomogeneousMatrixType:
     """Returns a top-down grasp pose for the highest point of a piece of cloth.
     The grasp height will be at least 1 cm to avoid collisions with the table.
     The gripper will open along the global x-axis.
@@ -41,7 +49,7 @@ def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0
     return grasp_pose
 
 
-def hang_in_the_air_joints(left: bool):
+def hang_in_the_air_joints(left: bool) -> JointConfigurationType:
     """Hardcoded joint poses for the left arm right arm to hang the cloth in the air.
 
     Args:
@@ -69,10 +77,10 @@ class GraspHighestController(Controller):
         self.hang_joints = hang_in_the_air_joints(left=False)
 
         # Attributes that will be set in plan()
-        self._image = None
-        self._grasp_pose = None
-        self._point_cloud = None
-        self._highest_point = None
+        self._image: Optional[OpenCVIntImageType] = None
+        self._grasp_pose: Optional[HomogeneousMatrixType] = None
+        self._point_cloud: Optional[PointCloud] = None
+        self._highest_point: Optional[Vector3DType] = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -88,6 +96,8 @@ class GraspHighestController(Controller):
 
     def execute_grasp_and_hang(self, grasp_pose: HomogeneousMatrixType) -> None:
         dual_arm = self.station.dual_arm
+
+        assert dual_arm.right_manipulator.gripper is not None  # For mypy
 
         # Grasp with a pregrasp pose, which also serves as retreat pose
         pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
@@ -122,9 +132,9 @@ class GraspHighestController(Controller):
         self._highest_point = highest_point_
         self._grasp_pose = grasp_pose
 
-    def visualize_plan(self) -> OpenCVIntImageType:
+    def visualize_plan(self) -> Tuple[OpenCVIntImageType, Any]:
         if self._image is None:
-            return
+            raise RuntimeError("You must call plan() before visualize_plan().")
 
         image = self._image
         camera_pose = self.station.camera_pose
@@ -151,6 +161,9 @@ class GraspHighestController(Controller):
         return image, key
 
     def execute_plan(self) -> None:
+        if self._grasp_pose is None:
+            logger.info("Grasp and hang not executed because no grasp pose was found.")
+            return
         self.execute_grasp_and_hang(self._grasp_pose)
 
     def execute_interactive(self) -> None:
@@ -167,18 +180,18 @@ class GraspHighestController(Controller):
             elif key == ord("q"):
                 sys.exit(0)
 
-    def execute(self, interactive=True) -> None:
+    def execute(self, interactive: bool = True) -> None:
         logger.info(f"{self.__class__.__name__} started.")
 
         if interactive:
             self.execute_interactive()
-            return
+        else:
+            # Autonomous execution
+            self.plan()
+            self.visualize_plan()
+            self.execute_plan()
 
-        # Autonomous execution
-        self.plan()
-        self.visualize_plan()
-        self.execute_plan()
-        return
+        logger.info(f"{self.__class__.__name__} finished.")
 
 
 if __name__ == "__main__":
@@ -191,4 +204,4 @@ if __name__ == "__main__":
     home_controller.execute()
 
     grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
-    grasp_highest_controller.execute(autonomous=True)
+    grasp_highest_controller.execute(interactive=True)
