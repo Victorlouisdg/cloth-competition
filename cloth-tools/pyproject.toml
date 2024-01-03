@@ -20,8 +20,13 @@ classifiers = [
 dependencies = [
     "numpy",
     "click",
+    "rerun-sdk",
     "airo-typing @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-typing",
-    "airo-robots @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-robots"
+    "airo-spatial-algebra @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-spatial-algebra",
+    "airo-robots @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-robots",
+    "airo-camera-toolkit @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-camera-toolkit",
+    "airo-dataset-tools @ git+https://github.com/airo-ugent/airo-mono@pointclouds#subdirectory=airo-dataset-tools",
+    "linen @ git+https://github.com/Victorlouisdg/linen@main#subdirectory=linen",
 ]
 
 [project.urls]
