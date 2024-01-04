@@ -16,21 +16,27 @@ class HomeController(Controller):
     ):
         self.station = station
 
+    def plan(self) -> None:
+        pass
+
+    def visualize_plan(self) -> None:
+        pass
+
     def execute(self) -> None:
         logger.info(f"{self.__class__.__name__} started.")
 
-        dual_arm = self.station.dual_arm
+        # dual_arm = self.station.dual_arm
 
-        assert dual_arm.left_manipulator.gripper is not None
-        assert dual_arm.right_manipulator.gripper is not None
+        # assert dual_arm.left_manipulator.gripper is not None
+        # assert dual_arm.right_manipulator.gripper is not None
 
-        left_opened = dual_arm.left_manipulator.gripper.open()
-        right_opened = dual_arm.right_manipulator.gripper.open()
-        left_opened.wait()
-        right_opened.wait()
+        # left_opened = dual_arm.left_manipulator.gripper.open()
+        # right_opened = dual_arm.right_manipulator.gripper.open()
+        # left_opened.wait()
+        # right_opened.wait()
 
-        dual_arm.left_manipulator.move_to_joint_configuration(self.station.home_joints_left).wait()
-        dual_arm.right_manipulator.move_to_joint_configuration(self.station.home_joints_right).wait()
+        # dual_arm.left_manipulator.move_to_joint_configuration(self.station.home_joints_left).wait()
+        # dual_arm.right_manipulator.move_to_joint_configuration(self.station.home_joints_right).wait()
 
         logger.info(f"{self.__class__.__name__} finished.")
 
@@ -41,4 +47,5 @@ if __name__ == "__main__":
 
     station = CompetitionStation()
     controller = HomeController(station)
-    controller.execute()
+    controller.plan()
+    controller.visualize_plan()

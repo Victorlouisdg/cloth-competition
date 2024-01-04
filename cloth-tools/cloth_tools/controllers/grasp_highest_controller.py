@@ -15,8 +15,8 @@ from airo_typing import (
     Vector3DType,
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
+from cloth_tools.controllers.basic_home_controller import BasicHomeController
 from cloth_tools.controllers.controller import Controller
-from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point
 from cloth_tools.stations.competition_station import CompetitionStation
@@ -199,7 +199,7 @@ if __name__ == "__main__":
 
     dual_arm = station.dual_arm
     # Move the arms to their home positions
-    home_controller = HomeController(station)
+    home_controller = BasicHomeController(station)
     home_controller.execute()
 
     grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
