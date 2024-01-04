@@ -4,17 +4,24 @@ from typing import Tuple
 import cloth_tools
 import numpy as np
 from airo_planner.utils import files
-from pydrake.geometry import Meshcat, MeshcatVisualizer
+from pydrake.geometry import Meshcat, MeshcatVisualizer, MeshcatVisualizerParams, Role
 from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.multibody.plant import DiscreteContactSolver
 from pydrake.multibody.tree import ModelInstanceIndex
 from pydrake.planning import RobotDiagramBuilder
 
+# from pydrake.visualization import ApplyVisualizationConfig, VisualizationConfig
 
-def get_robot_diagram_builder_dual_ur5e() -> Tuple[RobotDiagramBuilder, Tuple[ModelInstanceIndex, ModelInstanceIndex]]:
+
+def get_robot_diagram_builder_dual_ur5e(
+    meshcat: Meshcat | None = None,
+) -> Tuple[RobotDiagramBuilder, Tuple[ModelInstanceIndex, ModelInstanceIndex]]:
     """
     Create a Drake setup with two UR5e robots and a table.
     Nothing is built/finalized yet, so you can load more URDFs and weld frames etc.
+
+    Args:
+        meshcat: The meshcat visualizer to use. If None, a new one will be created.
 
     Returns:
         robot_diagram_builder: A RobotDiagramBuilder with two UR5e robots and a table.
@@ -28,8 +35,18 @@ def get_robot_diagram_builder_dual_ur5e() -> Tuple[RobotDiagramBuilder, Tuple[Mo
     parser = robot_diagram_builder.parser()
 
     # Add visualizer
-    meshcat = Meshcat()
+    if meshcat is None:
+        meshcat = Meshcat()
+
+    # meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
+
+    # Add visualizer for proximity/collision geometry
+    collision_params = MeshcatVisualizerParams(role=Role.kProximity, prefix="collision", visible_by_default=False)
+    MeshcatVisualizer.AddToBuilder(builder, scene_graph.get_query_output_port(), meshcat, collision_params)
+    # meshcat.SetProperty("collision", "visible", False) # overwritten by .Build() I believe
+
+    # This apparent requires the plant to be finalized?
     # config = VisualizationConfig(publish_contacts=True, enable_alpha_sliders=True)
     # ApplyVisualizationConfig(config, builder=builder, plant=plant, meshcat=meshcat)
 
