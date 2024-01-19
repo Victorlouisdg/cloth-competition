@@ -6,7 +6,6 @@ import numpy as np
 from airo_planner.utils import files
 from pydrake.geometry import Meshcat, MeshcatVisualizer, MeshcatVisualizerParams, Role
 from pydrake.math import RigidTransform, RollPitchYaw
-from pydrake.multibody.plant import DiscreteContactSolver
 from pydrake.multibody.tree import ModelInstanceIndex
 from pydrake.planning import RobotDiagramBuilder
 

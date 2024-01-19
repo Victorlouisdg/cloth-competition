@@ -1,6 +1,6 @@
 """Python functions to easily generate URDF for simple primitives.
 
-See: 
+See:
 """
 import xmltodict
 
@@ -21,7 +21,7 @@ def cylinder_dict(length: float, radius: float) -> dict:
             "@name": "cylinder",
             "link": {
                 "@name": "base_link",
-                "visual": {"geometry": geometry_dict}, # "material": {"@name": "blue"}},
+                "visual": {"geometry": geometry_dict},  # "material": {"@name": "blue"}},
                 "collision": {"geometry": geometry_dict},
             },
         }
