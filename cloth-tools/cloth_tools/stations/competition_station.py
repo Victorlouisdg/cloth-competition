@@ -27,8 +27,6 @@ class CompetitionStation(DualArmStation):
         self.home_joints_left = np.deg2rad([180, -135, 95, -50, -90, -90])
         self.home_joints_right = np.deg2rad([-180, -45, -95, -130, 90, 90])
 
-        # TODO add attribute for access to the drake scene / motion planning here
-
         logger.info("CompetitionStation initialized.")
 
 

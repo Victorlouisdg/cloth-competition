@@ -13,32 +13,12 @@ from pydrake.planning import RobotDiagramBuilder
 # from pydrake.visualization import ApplyVisualizationConfig, VisualizationConfig
 
 
-def get_robot_diagram_builder_dual_ur5e(
-    meshcat: Meshcat | None = None,
-) -> Tuple[RobotDiagramBuilder, Tuple[ModelInstanceIndex, ModelInstanceIndex]]:
-    """
-    Create a Drake setup with two UR5e robots and a table.
-    Nothing is built/finalized yet, so you can load more URDFs and weld frames etc.
-
-    Args:
-        meshcat: The meshcat visualizer to use. If None, a new one will be created.
-
-    Returns:
-        robot_diagram_builder: A RobotDiagramBuilder with two UR5e robots and a table.
-        arm_left_index: The index of the left arm.
-        arm_right_index: The index of the right arm.
-    """
-    robot_diagram_builder = RobotDiagramBuilder()
+def add_meshcat_to_builder(robot_diagram_builder: RobotDiagramBuilder) -> Meshcat:
     scene_graph = robot_diagram_builder.scene_graph()
-    plant = robot_diagram_builder.plant()
     builder = robot_diagram_builder.builder()
-    parser = robot_diagram_builder.parser()
 
-    # Add visualizer
-    if meshcat is None:
-        meshcat = Meshcat()
-
-    # meshcat = Meshcat()
+    # Adding Meshcat must also be done before finalizing
+    meshcat = Meshcat()
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
 
     # Add visualizer for proximity/collision geometry
@@ -50,8 +30,18 @@ def get_robot_diagram_builder_dual_ur5e(
     # config = VisualizationConfig(publish_contacts=True, enable_alpha_sliders=True)
     # ApplyVisualizationConfig(config, builder=builder, plant=plant, meshcat=meshcat)
 
-    # This get rid ot the warning for the mimic joints in the Robotiq gripper
-    plant.set_discrete_contact_solver(DiscreteContactSolver.kSap)
+    return meshcat
+
+
+def add_dual_ur5e_and_table_to_builder(
+    robot_diagram_builder: RobotDiagramBuilder,
+) -> Tuple[ModelInstanceIndex, ModelInstanceIndex]:
+    plant = robot_diagram_builder.plant()
+    parser = robot_diagram_builder.parser()
+
+    # This should get rid ot the warning for the mimic joints in the Robotiq gripper
+    # But it doesn't seem to work
+    # plant.set_discrete_contact_solver(DiscreteContactSolver.kSap)
 
     # Load URDF files
     resources_root = str(files.get_resources_dir())
@@ -90,4 +80,4 @@ def get_robot_diagram_builder_dual_ur5e(
     )
     plant.WeldFrames(world_frame, table_frame, RigidTransform([distance_between_arms_half, 0, 0]))
 
-    return robot_diagram_builder, (arm_left_index, arm_right_index)
+    return (arm_left_index, arm_right_index)
