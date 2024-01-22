@@ -33,6 +33,7 @@ class SingleArmMotionPlanner(abc.ABC):
     @abc.abstractmethod
     def plan_to_tcp_pose(
         self,
+        start_configuration: JointConfigurationType,
         tcp_pose_in_base: Union[HomogeneousMatrixType, None],
     ) -> List[JointConfigurationType]:
         """TODO"""
@@ -81,6 +82,8 @@ class DualArmMotionPlanner(abc.ABC):
     @abc.abstractmethod
     def plan_to_tcp_pose(
         self,
+        left_start_configuration: JointConfigurationType,
+        right_start_configuration: JointConfigurationType,
         left_tcp_pose_in_base: Union[HomogeneousMatrixType, None],
         right_tcp_pose_in_base: Union[HomogeneousMatrixType, None],
     ) -> List[JointConfigurationType]:
