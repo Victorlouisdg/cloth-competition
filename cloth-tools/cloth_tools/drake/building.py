@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 import cloth_tools
 import numpy as np
@@ -8,8 +8,8 @@ from pydrake.geometry import Meshcat, MeshcatVisualizer, MeshcatVisualizerParams
 from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.multibody.tree import ModelInstanceIndex
 from pydrake.planning import RobotDiagramBuilder
-
-# from pydrake.visualization import ApplyVisualizationConfig, VisualizationConfig
+from pydrake.systems.framework import Context, Diagram
+from pydrake.visualization import ApplyVisualizationConfig, VisualizationConfig
 
 
 def add_meshcat_to_builder(robot_diagram_builder: RobotDiagramBuilder) -> Meshcat:
@@ -24,10 +24,6 @@ def add_meshcat_to_builder(robot_diagram_builder: RobotDiagramBuilder) -> Meshca
     collision_params = MeshcatVisualizerParams(role=Role.kProximity, prefix="collision", visible_by_default=False)
     MeshcatVisualizer.AddToBuilder(builder, scene_graph.get_query_output_port(), meshcat, collision_params)
     # meshcat.SetProperty("collision", "visible", False) # overwritten by .Build() I believe
-
-    # This apparent requires the plant to be finalized?
-    # config = VisualizationConfig(publish_contacts=True, enable_alpha_sliders=True)
-    # ApplyVisualizationConfig(config, builder=builder, plant=plant, meshcat=meshcat)
 
     return meshcat
 
@@ -80,3 +76,40 @@ def add_dual_ur5e_and_table_to_builder(
     plant.WeldFrames(world_frame, table_frame, RigidTransform([distance_between_arms_half, 0, 0]))
 
     return (arm_left_index, arm_right_index)
+
+
+def finish_build(
+    robot_diagram_builder: RobotDiagramBuilder, meshcat: Optional[MeshcatVisualizer] = None
+) -> Tuple[Diagram, Context]:
+    """Finish building the diagram and create a context.
+
+    Note that after finishing the build, we can no longer add new objects to the Drake scene.
+    However this needs to be done to be able to use many functionalities, e.g. collision checking.
+    This is the standard workflow in Drake and a known "limitation".
+
+    Args:
+        robot_diagram_builder: The RobotDiagramBuilder object to which all models have already been added.
+        meshcat: The MeshcatVisualizer object.
+
+    Returns:
+        diagram: The diagram.
+        context: A default context that you can use as you wish.
+    """
+    plant = robot_diagram_builder.plant()
+
+    # These 4 lines are only for collision visualization
+    if meshcat is not None:
+        builder = robot_diagram_builder.builder()
+        plant.Finalize()
+        config = VisualizationConfig(publish_contacts=True, enable_alpha_sliders=True)
+        ApplyVisualizationConfig(config, builder=builder, plant=plant, meshcat=meshcat)
+
+    # A diagram is needed in the constructor of the SceneGraphCollisionChecker
+    # However, calling .Build() prevents us from adding more models, e.g. runtime obstacles
+    diagram = robot_diagram_builder.Build()
+
+    # Create default contexts ~= state
+    context = diagram.CreateDefaultContext()
+    diagram.ForcedPublish(context)  # From this point we can see a visualization in Meshcat
+
+    return diagram, context
