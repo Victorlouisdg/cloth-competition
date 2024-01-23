@@ -1,3 +1,6 @@
+**.log
+**.console
+
 **.idea/
 **.vscode/
 **.egg-info/

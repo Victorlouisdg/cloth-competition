@@ -6,7 +6,7 @@ from cloth_tools.ompl.state_space import (
     function_numpy_to_ompl,
     numpy_to_ompl_state,
     ompl_path_to_numpy,
-    single_arm_state_space,
+    revolute_joints_state_space,
 )
 from cloth_tools.planning.interfaces import SingleArmMotionPlanner
 from ompl import base as ob
@@ -43,35 +43,38 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         # Currently we only planning for 6 DoF arms
         self.degrees_of_freedom: int = 6
 
-    def _create_simple_setup(self, start_configuration, goal_configuration):
+        self._simple_setup = self._create_simple_setup()
+
+    def _create_simple_setup(self):
         # Create state space and convert to OMPL compatible data types
-        space = single_arm_state_space()  # This is currently always 6 DoF
-        start_state = numpy_to_ompl_state(start_configuration, space)
-        goal_state = numpy_to_ompl_state(goal_configuration, space)
+        space = revolute_joints_state_space(self.degrees_of_freedom)
+
         is_state_valid_ompl = function_numpy_to_ompl(self.is_state_valid_fn, self.degrees_of_freedom)
 
         # Configure the SimpleSetup object
         simple_setup = og.SimpleSetup(space)
         simple_setup.setStateValidityChecker(ob.StateValidityCheckerFn(is_state_valid_ompl))
-        simple_setup.setStartAndGoalStates(start_state, goal_state)
 
         # TODO: Should investigate effect of this further
         step = float(np.deg2rad(5))
         resolution = step / space.getMaximumExtent()
         simple_setup.getSpaceInformation().setStateValidityCheckingResolution(resolution)
 
-        # TODO think about how to make planner configurable
-        # Set planner to RRTstar because it keep looking for a better solutions in the given time
-        # planner = og.RRTstar(simple_setup.getSpaceInformation())
-        # simple_setup.setPlanner(planner)
-
         return simple_setup
+
+    def _set_start_and_goal_configurations(
+        self, start_configuration: JointConfigurationType, goal_configuration: JointConfigurationType
+    ) -> None:
+        space = self._simple_setup.getStateSpace()
+        start_state = numpy_to_ompl_state(start_configuration, space)
+        goal_state = numpy_to_ompl_state(goal_configuration, space)
+        self._simple_setup.setStartAndGoalStates(start_state, goal_state)
 
     def plan_to_joint_configuration(
         self, start_configuration: JointConfigurationType, goal_configuration: JointConfigurationType
     ):
-        simple_setup = self._create_simple_setup(start_configuration, goal_configuration)
-        self._simple_setup = simple_setup  # Save for debugging
+        self._set_start_and_goal_configurations(start_configuration, goal_configuration)
+        simple_setup = self._simple_setup
 
         simple_setup.solve(self.max_planning_time)
 

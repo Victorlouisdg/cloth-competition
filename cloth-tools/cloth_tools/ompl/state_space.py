@@ -31,18 +31,10 @@ def function_numpy_to_ompl(function: Callable, n: int):
     return wrapper
 
 
-def _joints_state_space(n: int) -> ob.RealVectorStateSpace:
+def revolute_joints_state_space(n: int) -> ob.RealVectorStateSpace:
     space = ob.RealVectorStateSpace(n)
     bounds = ob.RealVectorBounds(n)
     bounds.setLow(-2 * np.pi)
     bounds.setHigh(2 * np.pi)
     space.setBounds(bounds)
     return space
-
-
-def single_arm_state_space() -> ob.RealVectorStateSpace:
-    return _joints_state_space(6)
-
-
-def dual_arm_state_space() -> ob.RealVectorStateSpace:
-    return _joints_state_space(12)

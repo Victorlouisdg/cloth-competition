@@ -4,10 +4,10 @@ import numpy as np
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.ompl.single_arm_planner import SingleArmOmplPlanner
 from cloth_tools.ompl.state_space import (
-    dual_arm_state_space,
     function_numpy_to_ompl,
     numpy_to_ompl_state,
     ompl_path_to_numpy,
+    revolute_joints_state_space,
 )
 from cloth_tools.planning.interfaces import DualArmMotionPlanner
 from ompl import base as ob
@@ -39,7 +39,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         left_goal_configuration: JointConfigurationType,
         right_goal_configuration: JointConfigurationType,
     ):
-        space = dual_arm_state_space()  # This is currently always 12 DoF
+        space = revolute_joints_state_space(self.degrees_of_freedom)
         start_configuration = np.concatenate([left_start_configuration, right_start_configuration])
         goal_configuration = np.concatenate([left_goal_configuration, right_goal_configuration])
         start_state = numpy_to_ompl_state(start_configuration, space)
