@@ -14,6 +14,7 @@ def publish_joint_path(
     context: Context,
     arm_index: ModelInstanceIndex,
 ) -> None:
+    """See PublishPositionTrajectory in Tedrake manipulation repo."""
     plant = diagram.plant()
     plant_context = plant.GetMyContextFromRoot(context)
 

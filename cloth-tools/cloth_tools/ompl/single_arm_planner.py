@@ -16,18 +16,23 @@ JointConfigurationCheckerType = Callable[[JointConfigurationType], bool]
 
 
 class SingleArmOmplPlanner(SingleArmMotionPlanner):
+    """Utility class for single-arm motion planning using OMPL.
+
+    The purpose of this class is to make working with OMPL easier. It basically
+    just handles the creation of OMPL objects and the conversion between numpy
+    arrays and OMPL states and paths. After creating an instance of this class,
+    you can also extract the SimpleSetup object and use it directly if you want.
+    This can be useful for benchmarking with the OMPL benchmarking tools.
+    """
+
     def __init__(
         self,
         is_state_valid_fn: JointConfigurationCheckerType,
         max_planning_time: float = 30.0,
         num_interpolated_states: Optional[int] = 100,
     ):
-        """Instiatiate a single-arm motion planner that uses OMPL.
-
-        For now, I've chosen to not create the simple setup in the constructor,
-        because it requires the state space to be known. Instead, I've chosen
-        to create the simple setup in the plan_ methods, so we chould still
-        chose between joint or task space planning there.
+        """Instiatiate a single-arm motion planner that uses OMPL. This creates
+        a SimpleSetup object.
 
         Args:
             is_state_valid_fn: A function that checks if a given joint configuration is valid.
@@ -55,10 +60,15 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         simple_setup = og.SimpleSetup(space)
         simple_setup.setStateValidityChecker(ob.StateValidityCheckerFn(is_state_valid_ompl))
 
+        simple_setup.setOptimizationObjective(ob.PathLengthOptimizationObjective(simple_setup.getSpaceInformation()))
+
         # TODO: Should investigate effect of this further
         step = float(np.deg2rad(5))
         resolution = step / space.getMaximumExtent()
         simple_setup.getSpaceInformation().setStateValidityCheckingResolution(resolution)
+
+        planner = og.RRTConnect(simple_setup.getSpaceInformation())
+        simple_setup.setPlanner(planner)
 
         return simple_setup
 
