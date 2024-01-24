@@ -18,6 +18,8 @@ JointConfigurationCheckerType = Callable[[JointConfigurationType], bool]
 class SingleArmOmplPlanner(SingleArmMotionPlanner):
     """Utility class for single-arm motion planning using OMPL.
 
+    This class only plan in joint space.
+
     The purpose of this class is to make working with OMPL easier. It basically
     just handles the creation of OMPL objects and the conversion between numpy
     arrays and OMPL states and paths. After creating an instance of this class,
@@ -83,6 +85,8 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
     def plan_to_joint_configuration(
         self, start_configuration: JointConfigurationType, goal_configuration: JointConfigurationType
     ):
+        self._simple_setup.clear()  # Needed to support multiple calls with different start/goal configurations
+
         self._set_start_and_goal_configurations(start_configuration, goal_configuration)
         simple_setup = self._simple_setup
 

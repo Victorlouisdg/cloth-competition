@@ -32,33 +32,71 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         # Currently we only support planning for two 6 DoF arms
         self.degrees_of_freedom: int = 12
 
-    def _create_simple_setup(
+        # The OMPL SimpleSetup for dual arm planning
+        self._simple_setup = self._create_simple_setup_dual_arm()
+
+        # Let SingleArmOmplPlanner handle planning for a single arm requests
+        # Note that we (re)create these when start and goal config are set
+        self._single_arm_planner_left: SingleArmOmplPlanner | None = None
+        self._single_arm_planner_right: SingleArmOmplPlanner | None = None
+
+    def _create_simple_setup_dual_arm(
         self,
-        left_start_configuration: JointConfigurationType,
-        right_start_configuration: JointConfigurationType,
-        left_goal_configuration: JointConfigurationType,
-        right_goal_configuration: JointConfigurationType,
     ):
         space = revolute_joints_state_space(self.degrees_of_freedom)
-        start_configuration = np.concatenate([left_start_configuration, right_start_configuration])
-        goal_configuration = np.concatenate([left_goal_configuration, right_goal_configuration])
-        start_state = numpy_to_ompl_state(start_configuration, space)
-        goal_state = numpy_to_ompl_state(goal_configuration, space)
+
         is_state_valid_ompl = function_numpy_to_ompl(self.is_state_valid_fn, self.degrees_of_freedom)
 
         simple_setup = og.SimpleSetup(space)
         simple_setup.setStateValidityChecker(ob.StateValidityCheckerFn(is_state_valid_ompl))
-        simple_setup.setStartAndGoalStates(start_state, goal_state)
 
         # TODO: investigate whether a different reolsution is needed for dual arm planning as opposed to single arm planning
         step = float(np.deg2rad(5))
         resolution = step / space.getMaximumExtent()
         simple_setup.getSpaceInformation().setStateValidityCheckingResolution(resolution)
 
-        planner = og.RRTstar(simple_setup.getSpaceInformation())
+        planner = og.RRTConnect(simple_setup.getSpaceInformation())
         simple_setup.setPlanner(planner)
 
         return simple_setup
+
+    def _set_start_and_goal_configurations(
+        self,
+        left_start_configuration: JointConfigurationType,
+        right_start_configuration: JointConfigurationType,
+        left_goal_configuration: JointConfigurationType,
+        right_goal_configuration: JointConfigurationType,
+    ):
+        # Set the starts and goals for dual arm planning
+        space = self._simple_setup.getStateSpace()
+        start_configuration = np.concatenate([left_start_configuration, right_start_configuration])
+        goal_configuration = np.concatenate([left_goal_configuration, right_goal_configuration])
+        start_state = numpy_to_ompl_state(start_configuration, space)
+        goal_state = numpy_to_ompl_state(goal_configuration, space)
+        self._simple_setup.setStartAndGoalStates(start_state, goal_state)
+
+        # Replace single arm planners for the left and right arm
+        def is_left_state_valid_fn(left_state):
+            return self.is_state_valid_fn(np.concatenate((left_state, right_start_configuration)))
+
+        def is_right_state_valid_fn(right_state):
+            return self.is_state_valid_fn(np.concatenate((left_start_configuration, right_state)))
+
+        self._single_arm_planner_left = SingleArmOmplPlanner(
+            is_left_state_valid_fn, self.max_planning_time, self.num_interpolated_states
+        )
+
+        self._single_arm_planner_right = SingleArmOmplPlanner(
+            is_right_state_valid_fn, self.max_planning_time, self.num_interpolated_states
+        )
+
+        self._single_arm_planner_left._set_start_and_goal_configurations(
+            left_start_configuration, left_goal_configuration
+        )
+
+        self._single_arm_planner_right._set_start_and_goal_configurations(
+            right_start_configuration, right_goal_configuration
+        )
 
     def _plan_to_joint_configuration_dual_arm(
         self,
@@ -67,13 +105,13 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         left_goal_configuration: JointConfigurationType,
         right_goal_configuration: JointConfigurationType,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
-        simple_setup = self._create_simple_setup(
+
+        self._simple_setup.clear()
+        self._set_start_and_goal_configurations(
             left_start_configuration, right_start_configuration, left_goal_configuration, right_goal_configuration
         )
 
-        # Everything below here in this functionis exactly the same as in
-        # SingleArmOmplPlanner so we could consider refactoring this
-        self._simple_setup = simple_setup  # Save for debugging
+        simple_setup = self._simple_setup
 
         simple_setup.solve(self.max_planning_time)
 
@@ -95,15 +133,14 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         right_start_configuration: JointConfigurationType,
         left_goal_configuration: JointConfigurationType,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
-        def is_left_state_valid_fn(left_state):
-            return self.is_state_valid_fn(np.concatenate((left_state, right_start_configuration)))
-
-        single_arm_planner = SingleArmOmplPlanner(
-            is_left_state_valid_fn, self.max_planning_time, self.num_interpolated_states
+        # Set right goal to right start configuration
+        self._set_start_and_goal_configurations(
+            left_start_configuration, right_start_configuration, left_goal_configuration, right_start_configuration
         )
-        self._single_arm_planner = single_arm_planner  # Save for debugging
 
-        left_path = single_arm_planner.plan_to_joint_configuration(left_start_configuration, left_goal_configuration)
+        left_path = self._single_arm_planner_left.plan_to_joint_configuration(
+            left_start_configuration, left_goal_configuration
+        )
         path = [(left_state, right_start_configuration) for left_state in left_path]
         return path
 
@@ -113,15 +150,12 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         right_start_configuration: JointConfigurationType,
         right_goal_configuration: JointConfigurationType,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
-        def is_right_state_valid_fn(right_state):
-            return self.is_state_valid_fn(np.concatenate((left_start_configuration, right_state)))
-
-        single_arm_planner = SingleArmOmplPlanner(
-            is_right_state_valid_fn, self.max_planning_time, self.num_interpolated_states
+        # Set left goal to left start configuration
+        self._set_start_and_goal_configurations(
+            left_start_configuration, right_start_configuration, left_start_configuration, right_goal_configuration
         )
-        self._single_arm_planner = single_arm_planner  # Save for debugging
 
-        right_path = single_arm_planner.plan_to_joint_configuration(
+        right_path = self._single_arm_planner_right.plan_to_joint_configuration(
             right_start_configuration, right_goal_configuration
         )
         path = [(left_start_configuration, right_state) for right_state in right_path]

@@ -46,6 +46,7 @@ def publish_dual_arm_joint_path(
     plant = diagram.plant()
     plant_context = plant.GetMyContextFromRoot(context)
 
+    # meshcat.DeleteRecording() # Doesn't seem necessary, old one is overwritten
     meshcat.StartRecording(set_visualizations_while_recording=False)
 
     period = duration / len(dual_arm_joint_path)
