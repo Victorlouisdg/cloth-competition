@@ -3,14 +3,15 @@ from typing import List, Tuple
 from airo_typing import JointConfigurationType
 from pydrake.geometry import Meshcat
 from pydrake.multibody.tree import ModelInstanceIndex
-from pydrake.systems.framework import Context, Diagram
+from pydrake.planning import RobotDiagram
+from pydrake.systems.framework import Context
 
 
 def publish_joint_path(
     joint_path: List[JointConfigurationType],
     duration: float,
     meshcat: Meshcat,
-    diagram: Diagram,
+    diagram: RobotDiagram,
     context: Context,
     arm_index: ModelInstanceIndex,
 ) -> None:
@@ -37,7 +38,7 @@ def publish_dual_arm_joint_path(
     dual_arm_joint_path: List[Tuple[JointConfigurationType, JointConfigurationType]],
     duration: float,
     meshcat: Meshcat,
-    diagram: Diagram,
+    diagram: RobotDiagram,
     context: Context,
     arm_left_index: ModelInstanceIndex,
     arm_right_index: ModelInstanceIndex,

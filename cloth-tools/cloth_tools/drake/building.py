@@ -7,8 +7,8 @@ from airo_planner.utils import files
 from pydrake.geometry import Meshcat, MeshcatVisualizer, MeshcatVisualizerParams, Role
 from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.multibody.tree import ModelInstanceIndex
-from pydrake.planning import RobotDiagramBuilder
-from pydrake.systems.framework import Context, Diagram
+from pydrake.planning import RobotDiagram, RobotDiagramBuilder
+from pydrake.systems.framework import Context
 from pydrake.visualization import ApplyVisualizationConfig, VisualizationConfig
 
 
@@ -80,7 +80,7 @@ def add_dual_ur5e_and_table_to_builder(
 
 def finish_build(
     robot_diagram_builder: RobotDiagramBuilder, meshcat: Optional[MeshcatVisualizer] = None
-) -> Tuple[Diagram, Context]:
+) -> Tuple[RobotDiagram, Context]:
     """Finish building the diagram and create a context.
 
     Note that after finishing the build, we can no longer add new objects to the Drake scene.
@@ -92,7 +92,7 @@ def finish_build(
         meshcat: The MeshcatVisualizer object.
 
     Returns:
-        diagram: The diagram.
+        diagram: The robot diagram.
         context: A default context that you can use as you wish.
     """
     plant = robot_diagram_builder.plant()
