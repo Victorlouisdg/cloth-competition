@@ -58,6 +58,8 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
 
         self._simple_setup = self._create_simple_setup()
 
+        self._path_length: float | None = None
+
     def _create_simple_setup(self):
         # Create state space and convert to OMPL compatible data types
         space = revolute_joints_state_space(self.degrees_of_freedom)
@@ -132,7 +134,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
 
         ik_solutions_valid = [s for s in ik_solutions if self.is_state_valid_fn(s)]
         if len(ik_solutions_valid) == 0:
-            logger.info("All IK are invalid, return None.")
+            logger.info("All IK solutions are invalid, returning None.")
             return None
 
         # Try solving to each IK solution in joint space.

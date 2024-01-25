@@ -40,6 +40,8 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         self._single_arm_planner_left: SingleArmOmplPlanner | None = None
         self._single_arm_planner_right: SingleArmOmplPlanner | None = None
 
+        self._path_length_dual: float | None = None
+
     def _create_simple_setup_dual_arm(
         self,
     ):
