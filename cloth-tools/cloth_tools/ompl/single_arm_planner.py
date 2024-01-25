@@ -31,7 +31,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         self,
         is_state_valid_fn: JointConfigurationCheckerType,
         max_planning_time: float = 30.0,
-        num_interpolated_states: Optional[int] = 100,
+        num_interpolated_states: Optional[int] = 500,
     ):
         """Instiatiate a single-arm motion planner that uses OMPL. This creates
         a SimpleSetup object.
@@ -95,8 +95,17 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         if not simple_setup.haveExactSolutionPath():
             return None
 
+        # Simplify, smooth, simplify again and interpolate the solution path
+        # We simply twice because the smoothing changes the density of the
+        # states along the path. If you then execute those paths, the robot will
+        # move very slow for some parts of the path and very fast for other
+        # parts. By simplifying and interpolating, we get a path with much more
+        # evenly spaced states.
         simple_setup.simplifySolution()
+        path_simplifier = og.PathSimplifier(simple_setup.getSpaceInformation())
         path = simple_setup.getSolutionPath()
+        path_simplifier.smoothBSpline(path)
+        simple_setup.simplifySolution()
         if self.num_interpolated_states is not None:
             path.interpolate(self.num_interpolated_states)
 

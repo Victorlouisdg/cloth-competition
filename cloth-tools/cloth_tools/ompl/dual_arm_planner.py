@@ -21,7 +21,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         self,
         is_state_valid_fn: DualJointConfigurationCheckerType,
         max_planning_time: float = 30.0,
-        num_interpolated_states: Optional[int] = 100,
+        num_interpolated_states: Optional[int] = 500,
     ):
         self.is_state_valid_fn = is_state_valid_fn
 
@@ -117,8 +117,12 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         if not simple_setup.haveExactSolutionPath():
             return None
 
+        # Simplify, smooth and interpolate the solution path
         simple_setup.simplifySolution()
+        path_simplifier = og.PathSimplifier(simple_setup.getSpaceInformation())
         path = simple_setup.getSolutionPath()
+        path_simplifier.smoothBSpline(path)
+        simple_setup.simplifySolution()
         if self.num_interpolated_states is not None:
             path.interpolate(self.num_interpolated_states)
 
