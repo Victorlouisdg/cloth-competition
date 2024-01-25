@@ -30,7 +30,7 @@ def add_meshcat_to_builder(robot_diagram_builder: RobotDiagramBuilder) -> Meshca
 
 def add_dual_ur5e_and_table_to_builder(
     robot_diagram_builder: RobotDiagramBuilder,
-) -> Tuple[ModelInstanceIndex, ModelInstanceIndex]:
+) -> Tuple[Tuple[ModelInstanceIndex, ModelInstanceIndex], Tuple[ModelInstanceIndex, ModelInstanceIndex]]:
     plant = robot_diagram_builder.plant()
     parser = robot_diagram_builder.parser()
 
@@ -75,7 +75,7 @@ def add_dual_ur5e_and_table_to_builder(
     )
     plant.WeldFrames(world_frame, table_frame, RigidTransform([distance_between_arms_half, 0, 0]))
 
-    return (arm_left_index, arm_right_index)
+    return (arm_left_index, arm_right_index), (gripper_left_index, gripper_right_index)
 
 
 def finish_build(

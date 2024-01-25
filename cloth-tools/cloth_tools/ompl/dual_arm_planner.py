@@ -105,7 +105,6 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         left_goal_configuration: JointConfigurationType,
         right_goal_configuration: JointConfigurationType,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
-
         self._simple_setup.clear()
         self._set_start_and_goal_configurations(
             left_start_configuration, right_start_configuration, left_goal_configuration, right_goal_configuration
@@ -141,6 +140,10 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         left_path = self._single_arm_planner_left.plan_to_joint_configuration(
             left_start_configuration, left_goal_configuration
         )
+
+        if left_path is None:
+            return None
+
         path = [(left_state, right_start_configuration) for left_state in left_path]
         return path
 
@@ -158,6 +161,10 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         right_path = self._single_arm_planner_right.plan_to_joint_configuration(
             right_start_configuration, right_goal_configuration
         )
+
+        if right_path is None:
+            return None
+
         path = [(left_start_configuration, right_state) for right_state in right_path]
         return path
 
