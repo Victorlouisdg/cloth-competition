@@ -62,3 +62,30 @@ def publish_dual_arm_joint_path(
 
     meshcat.StopRecording()
     meshcat.PublishRecording()
+
+
+def publish_ik_solutions(
+    solutions: List[JointConfigurationType],
+    time_per_solution: float,
+    meshcat: Meshcat,
+    diagram: RobotDiagram,
+    context: Context,
+    arm_index: ModelInstanceIndex,
+):
+    plant = diagram.plant()
+    plant_context = plant.GetMyContextFromRoot(context)
+
+    fps = 60.0
+    meshcat.StartRecording(set_visualizations_while_recording=False, frames_per_second=fps)
+
+    t = 0.0
+
+    for joint_configuration in solutions:
+        for _ in range(int(time_per_solution * fps)):
+            context.SetTime(t)
+            plant.SetPositions(plant_context, arm_index, joint_configuration.squeeze())
+            diagram.ForcedPublish(context)
+            t += 1.0 / fps
+
+    meshcat.StopRecording()
+    meshcat.PublishRecording()

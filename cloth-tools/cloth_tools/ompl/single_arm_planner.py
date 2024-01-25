@@ -1,7 +1,7 @@
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 import numpy as np
-from airo_typing import JointConfigurationType
+from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.ompl.state_space import (
     function_numpy_to_ompl,
     numpy_to_ompl_state,
@@ -9,10 +9,12 @@ from cloth_tools.ompl.state_space import (
     revolute_joints_state_space,
 )
 from cloth_tools.planning.interfaces import SingleArmMotionPlanner
+from loguru import logger
 from ompl import base as ob
 from ompl import geometric as og
 
 JointConfigurationCheckerType = Callable[[JointConfigurationType], bool]
+InverseKinematicsType = Callable[[JointConfigurationType], List[HomogeneousMatrixType]]
 
 
 class SingleArmOmplPlanner(SingleArmMotionPlanner):
@@ -30,18 +32,22 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
     def __init__(
         self,
         is_state_valid_fn: JointConfigurationCheckerType,
+        inverse_kinematics_fn: Optional[InverseKinematicsType] = None,
         max_planning_time: float = 30.0,
         num_interpolated_states: Optional[int] = 500,
     ):
         """Instiatiate a single-arm motion planner that uses OMPL. This creates
-        a SimpleSetup object.
+        a SimpleSetup object. Note that planning to TCP poses is only possible
+        if the inverse kinematics function is provided.
 
         Args:
             is_state_valid_fn: A function that checks if a given joint configuration is valid.
+            inverse_kinematics_fn: A function that computes the inverse kinematics of a given TCP pose.
             max_planning_time: The maximum time allowed for planning.
             num_interpolated_states: The amount of states the solution path should be interpolated to, if None then no interpolation is done.
         """
         self.is_state_valid_fn = is_state_valid_fn
+        self.inverse_kinematics_fn = inverse_kinematics_fn
 
         # Settings
         self.max_planning_time = max_planning_time
@@ -109,8 +115,42 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         if self.num_interpolated_states is not None:
             path.interpolate(self.num_interpolated_states)
 
+        self._path_length = path.length()
+
         path_numpy = ompl_path_to_numpy(path, self.degrees_of_freedom)
         return path_numpy
 
     def plan_to_tcp_pose(self, start_configuration, tcp_pose_in_base):
-        raise NotImplementedError
+        if self.inverse_kinematics_fn is None:
+            logger.warning("Planning to TCP pose attempted but inverse_kinematics_fn was provided, returing None.")
+            return None
+
+        ik_solutions = self.inverse_kinematics_fn(tcp_pose_in_base)
+        if ik_solutions is None or len(ik_solutions) == 0:
+            logger.info("IK returned no solutions, returning None.")
+            return None
+
+        ik_solutions_valid = [s for s in ik_solutions if self.is_state_valid_fn(s)]
+        if len(ik_solutions_valid) == 0:
+            logger.info("All IK are invalid, return None.")
+            return None
+
+        # Try solving to each IK solution in joint space.
+        paths = []
+        path_lengths = []
+        for ik_solution in ik_solutions_valid:
+            path = self.plan_to_joint_configuration(start_configuration, ik_solution)
+            if path is not None:
+                paths.append(path)
+                path_lengths.append(self._path_length)
+
+        if len(paths) == 0:
+            logger.info("No paths founds towards any IK solutions, returning None.")
+            return None
+
+        logger.info(f"Found {len(paths)} paths towards IK solutions.")
+
+        # Pick the shortest path
+        shortest_path_idx = np.argmin(path_lengths)
+        shortest_path = paths[shortest_path_idx]
+        return shortest_path
