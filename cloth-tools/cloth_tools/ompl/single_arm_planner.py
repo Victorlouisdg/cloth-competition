@@ -14,7 +14,7 @@ from ompl import base as ob
 from ompl import geometric as og
 
 JointConfigurationCheckerType = Callable[[JointConfigurationType], bool]
-InverseKinematicsType = Callable[[JointConfigurationType], List[HomogeneousMatrixType]]
+InverseKinematicsType = Callable[[HomogeneousMatrixType], List[JointConfigurationType]]
 
 
 class SingleArmOmplPlanner(SingleArmMotionPlanner):
