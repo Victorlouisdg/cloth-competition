@@ -5,6 +5,8 @@ from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e
 from cloth_tools.drake.building import add_dual_ur5e_and_table_to_builder, add_meshcat_to_builder, finish_build
+from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
+from cloth_tools.planning.interfaces import DualArmMotionPlanner
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from loguru import logger
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
@@ -58,11 +60,24 @@ class CompetitionStation(DualArmStation):
         self.home_joints_right = np.deg2rad([-180, -45, -95, -130, 90, 90])
 
         # Planner for the two arms without obstacles (only the table)
-        self.planner = self._setup_planner()
+        self.planner: DualArmMotionPlanner = self._setup_planner()
+
+        # This is purely for visualization, but read the robot joints and publish them to meshcat
+        diagram = self._diagram
+        context = self._context
+        arm_indices = self._arm_indices
+        home_joints_left = self.home_joints_left
+        home_joints_right = self.home_joints_right
+        plant = diagram.plant()
+        plant_context = plant.GetMyContextFromRoot(context)
+        arm_left_index, arm_right_index = arm_indices
+        plant.SetPositions(plant_context, arm_left_index, home_joints_left)
+        plant.SetPositions(plant_context, arm_right_index, home_joints_right)
+        diagram.ForcedPublish(context)
 
         logger.info("CompetitionStation initialized.")
 
-    def _setup_planner(self):
+    def _setup_planner(self) -> DualArmOmplPlanner:
         # Creating the default scene
         robot_diagram_builder = RobotDiagramBuilder()
         meshcat = add_meshcat_to_builder(robot_diagram_builder)
@@ -77,7 +92,22 @@ class CompetitionStation(DualArmStation):
             self_collision_padding=0.005,
         )
 
-        collision_checker.CheckConfigCollisionFree
+        is_state_valid_fn = collision_checker.CheckConfigCollisionFree
+
+        # expose these things for visualization
+        self._diagram = diagram
+        self._context = context
+        self._collision_checker = collision_checker
+        self._meshcat = meshcat
+        self._arm_indices = arm_indices
+        self._gripper_indices = gripper_indices
+
+        planner = DualArmOmplPlanner(
+            is_state_valid_fn,
+            left_inverse_kinematics_fn,
+            right_inverse_kinematics_fn,
+        )
+        return planner
 
 
 if __name__ == "__main__":
