@@ -1,8 +1,38 @@
+from typing import List
+
 import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
+from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e
+from cloth_tools.drake.building import add_dual_ur5e_and_table_to_builder, add_meshcat_to_builder, finish_build
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from loguru import logger
+from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
+from ur_analytic_ik import ur5e
+
+# TODO make these things not hardcoded, but maybe load from extrinsics?
+# Should be consistent with the Drake plant used for collision checking
+tcp_transform = np.identity(4)
+tcp_transform[2, 3] = 0.175
+
+# R is short for "right robot base"
+X_W_R = np.identity(4)
+X_W_R[0, 3] = 0.9
+X_R_W = np.linalg.inv(X_W_R)
+
+
+def left_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
+    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(tcp_pose, tcp_transform)
+    solutions = [solution.squeeze() for solution in solutions_1x6]
+    return solutions
+
+
+def right_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
+    X_W_TCP = tcp_pose
+    X_R_TCP = X_R_W @ X_W_TCP
+    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_R_TCP, tcp_transform)
+    solutions = [solution.squeeze() for solution in solutions_1x6]
+    return solutions
 
 
 class CompetitionStation(DualArmStation):
@@ -27,7 +57,27 @@ class CompetitionStation(DualArmStation):
         self.home_joints_left = np.deg2rad([180, -135, 95, -50, -90, -90])
         self.home_joints_right = np.deg2rad([-180, -45, -95, -130, 90, 90])
 
+        # Planner for the two arms without obstacles (only the table)
+        self.planner = self._setup_planner()
+
         logger.info("CompetitionStation initialized.")
+
+    def _setup_planner(self):
+        # Creating the default scene
+        robot_diagram_builder = RobotDiagramBuilder()
+        meshcat = add_meshcat_to_builder(robot_diagram_builder)
+        arm_indices, gripper_indices = add_dual_ur5e_and_table_to_builder(robot_diagram_builder)
+        diagram, context = finish_build(robot_diagram_builder, meshcat)
+
+        collision_checker = SceneGraphCollisionChecker(
+            model=diagram,
+            robot_model_instances=[*arm_indices, *gripper_indices],
+            edge_step_size=0.125,  # Arbitrary value: we don't use the CheckEdgeCollisionFree
+            env_collision_padding=0.005,
+            self_collision_padding=0.005,
+        )
+
+        collision_checker.CheckConfigCollisionFree
 
 
 if __name__ == "__main__":
