@@ -1,5 +1,5 @@
 import sys
-from typing import Any, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -15,12 +15,12 @@ from airo_typing import (
     Vector3DType,
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
-from cloth_tools.controllers.basic_home_controller import BasicHomeController
 from cloth_tools.controllers.controller import Controller
+from cloth_tools.controllers.home_controller import HomeController, execute_joint_path
+from cloth_tools.drake.visualization import publish_dual_arm_joint_path
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point
 from cloth_tools.stations.competition_station import CompetitionStation
-from cloth_tools.stations.dual_arm_station import DualArmStation
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards
@@ -71,7 +71,7 @@ class GraspHighestController(Controller):
     Currently always uses the right arm to grasp and hang the cloth.
     """
 
-    def __init__(self, station: DualArmStation, bbox: BoundingBox3DType):
+    def __init__(self, station: CompetitionStation, bbox: BoundingBox3DType):
         self.station = station
         self.bbox = bbox
         self.hang_joints = hang_in_the_air_joints(left=False)
@@ -79,8 +79,13 @@ class GraspHighestController(Controller):
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
         self._grasp_pose: Optional[HomogeneousMatrixType] = None
+        self._pregrasp_pose: Optional[HomogeneousMatrixType] = None
         self._point_cloud: Optional[PointCloud] = None
         self._highest_point: Optional[Vector3DType] = None
+        self._path_pregrasp: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
+        self._duration_pregrasp: Optional[float] = None
+        self._path_hang: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
+        self._duration_hang: Optional[float] = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -94,20 +99,22 @@ class GraspHighestController(Controller):
         rr.init(window_name, spawn=True)
         rr_log_camera(camera, camera_pose)
 
-    def execute_grasp_and_hang(self, grasp_pose: HomogeneousMatrixType) -> None:
+    def execute_grasp_and_hang(self, grasp_pose: HomogeneousMatrixType, pregrasp_pose: HomogeneousMatrixType) -> None:
         dual_arm = self.station.dual_arm
 
         assert dual_arm.right_manipulator.gripper is not None  # For mypy
 
-        # Grasp with a pregrasp pose, which also serves as retreat pose
-        pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
-        dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose).wait()  # TODO: make this a move_to_tcp_pose
+        # Execute the path to the pregrasp pose
+        execute_joint_path(dual_arm, self._path_pregrasp, self._duration_pregrasp)
+
+        # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(None, grasp_pose, linear_speed=0.2).wait()
         dual_arm.right_manipulator.gripper.close().wait()
         dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose, linear_speed=0.2).wait()
 
         # Hang the cloth in the air
-        dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
+        execute_joint_path(dual_arm, self._path_hang, self._duration_hang)
+        # dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
 
     def plan(self) -> None:
         camera = self.station.camera
@@ -132,6 +139,25 @@ class GraspHighestController(Controller):
         self._highest_point = highest_point_
         self._grasp_pose = grasp_pose
 
+        pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
+        self._pregrasp_pose = pregrasp_pose
+
+        planner = self.station.planner
+        dual_arm = self.station.dual_arm
+        start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
+        start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
+        path = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
+
+        self._path_pregrasp = path
+        self._duration_pregrasp = 2.0 * planner._single_arm_planner_right._path_length
+
+        # plan an additional path from the pregrasp joints to the hang joints
+        # we operate under the assumption that the after the grasp the robot is back at the pregrasp pose with the same joint config
+        pregrasp_joints_right = path[-1][1]
+        path = planner.plan_to_joint_configuration(start_joints_left, pregrasp_joints_right, None, self.hang_joints)
+        self._path_hang = path
+        self._duration_hang = 2.0 * planner._single_arm_planner_right._path_length
+
     def visualize_plan(self) -> Tuple[OpenCVIntImageType, Any]:
         if self._image is None:
             raise RuntimeError("You must call plan() before visualize_plan().")
@@ -151,31 +177,38 @@ class GraspHighestController(Controller):
             rr_grasp_pose = rr.Transform3D(translation=grasp_pose[0:3, 3], mat3x3=grasp_pose[0:3, 0:3])
             rr.log("world/grasp_pose", rr_grasp_pose)
 
+        if self._path_pregrasp is not None:
+            path = self._path_pregrasp
+            duration = self._duration_pregrasp
+            station = self.station
+            publish_dual_arm_joint_path(
+                path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
+            )
+
         if self._point_cloud is not None:
             point_cloud = self._point_cloud
             rr_point_cloud = rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors)
             rr.log("world/point_cloud", rr_point_cloud)
 
         cv2.imshow(self.__class__.__name__, image)
-        key = cv2.waitKey(1)
+        key = cv2.waitKey(0)
         return image, key
 
     def execute_plan(self) -> None:
         if self._grasp_pose is None:
             logger.info("Grasp and hang not executed because no grasp pose was found.")
             return
-        self.execute_grasp_and_hang(self._grasp_pose)
+        self.execute_grasp_and_hang(self._grasp_pose, self._pregrasp_pose)
 
     def execute_interactive(self) -> None:
         while True:
             self.plan()
             _, key = self.visualize_plan()
-            if key == ord("p"):
-                key = cv2.waitKey(0)
-            elif key == ord("y"):
+            if key == ord("y"):
                 self.execute_plan()
                 return
             elif key == ord("n"):
+                self._path_pregrasp = None
                 continue
             elif key == ord("q"):
                 sys.exit(0)
@@ -199,8 +232,8 @@ if __name__ == "__main__":
 
     dual_arm = station.dual_arm
     # Move the arms to their home positions
-    home_controller = BasicHomeController(station)
-    home_controller.execute()
+    home_controller = HomeController(station)
+    home_controller.execute(interactive=True)
 
     grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
     grasp_highest_controller.execute(interactive=True)

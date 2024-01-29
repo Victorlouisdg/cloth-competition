@@ -24,6 +24,7 @@ X_R_W = np.linalg.inv(X_W_R)
 
 
 def left_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
+    # TODO: np.ascontiguousarray?
     solutions_1x6 = ur5e.inverse_kinematics_with_tcp(tcp_pose, tcp_transform)
     solutions = [solution.squeeze() for solution in solutions_1x6]
     return solutions

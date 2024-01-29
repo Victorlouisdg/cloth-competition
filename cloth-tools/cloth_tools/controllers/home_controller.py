@@ -21,10 +21,7 @@ class HomeController(Controller):
     Opens the grippers and move the arms to their home positions.
     """
 
-    def __init__(
-        self,
-        station: CompetitionStation,
-    ):
+    def __init__(self, station: CompetitionStation):
         self.station = station
 
     def plan(self) -> None:
@@ -47,6 +44,7 @@ class HomeController(Controller):
     def visualize_plan(self) -> None:
         path = self._path
         duration = self._duration
+        station = self.station
         publish_dual_arm_joint_path(
             path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
         )
