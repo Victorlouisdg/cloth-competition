@@ -1,7 +1,6 @@
 from pathlib import Path
 from typing import Optional, Tuple
 
-import cloth_tools
 import numpy as np
 from airo_planner.utils import files
 from pydrake.geometry import Meshcat, MeshcatVisualizer, MeshcatVisualizerParams, Role
@@ -44,7 +43,7 @@ def add_dual_ur5e_and_table_to_builder(
     robotiq_2f_85_gripper_urdf = (
         Path(resources_root) / "grippers" / "2f_85_gripper" / "urdf" / "robotiq_2f_85_static.urdf"
     )
-    table_urdf = cloth_tools.resources.table
+    table_urdf = "table.urdf"
 
     arm_left_index = parser.AddModelFromFile(str(ur5e_urdf), model_name="arm_left")
     arm_right_index = parser.AddModelFromFile(str(ur5e_urdf), model_name="arm_right")
@@ -54,26 +53,29 @@ def add_dual_ur5e_and_table_to_builder(
 
     # Weld some frames together
     world_frame = plant.world_frame()
+    table_frame = plant.GetFrameByName("base_link", table_index)
     arm_left_frame = plant.GetFrameByName("base_link", arm_left_index)
     arm_right_frame = plant.GetFrameByName("base_link", arm_right_index)
-    arm_left_wrist_frame = plant.GetFrameByName("wrist_3_link", arm_left_index)
-    arm_right_wrist_frame = plant.GetFrameByName("wrist_3_link", arm_right_index)
+    arm_left_tool_frame = plant.GetFrameByName("tool0", arm_left_index)
+    arm_right_tool_frame = plant.GetFrameByName("tool0", arm_right_index)
     gripper_left_frame = plant.GetFrameByName("base_link", gripper_left_index)
     gripper_right_frame = plant.GetFrameByName("base_link", gripper_right_index)
-    table_frame = plant.GetFrameByName("base_link", table_index)
 
-    distance_between_arms = 0.9
-    distance_between_arms_half = distance_between_arms / 2
+    y_distance = 0.45
 
-    plant.WeldFrames(world_frame, arm_left_frame)
-    plant.WeldFrames(world_frame, arm_right_frame, RigidTransform([distance_between_arms, 0, 0]))
     plant.WeldFrames(
-        arm_left_wrist_frame, gripper_left_frame, RigidTransform(p=[0, 0, 0], rpy=RollPitchYaw([0, 0, np.pi / 2]))
+        world_frame, arm_left_frame, RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, -y_distance, 0])
     )
     plant.WeldFrames(
-        arm_right_wrist_frame, gripper_right_frame, RigidTransform(p=[0, 0, 0], rpy=RollPitchYaw([0, 0, np.pi / 2]))
+        world_frame, arm_right_frame, RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, y_distance, 0])
     )
-    plant.WeldFrames(world_frame, table_frame, RigidTransform([distance_between_arms_half, 0, 0]))
+    plant.WeldFrames(
+        arm_left_tool_frame, gripper_left_frame, RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
+    )
+    plant.WeldFrames(
+        arm_right_tool_frame, gripper_right_frame, RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
+    )
+    plant.WeldFrames(world_frame, table_frame)
 
     return (arm_left_index, arm_right_index), (gripper_left_index, gripper_right_index)
 

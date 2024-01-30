@@ -12,13 +12,13 @@
   <link name="box_link">
     <visual>
       <geometry>
-        <box size="2.0 2.0 0.1"/>
+        <box size="1.5 2.0 0.1"/>
       </geometry>
       <material name="wood"/>
     </visual>
     <collision>
       <geometry>
-        <box size="2.0 2.0 0.1"/>
+        <box size="1.5 2.0 0.1"/>
       </geometry>
     </collision>
     <inertial>
