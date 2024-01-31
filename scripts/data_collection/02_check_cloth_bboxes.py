@@ -19,6 +19,7 @@ from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point, lowest_point
 from cloth_tools.visualization.rerun import rr_log_camera
 from loguru import logger
+from pydrake.math import RigidTransform, RollPitchYaw
 
 
 def log_and_draw_point(
@@ -28,7 +29,7 @@ def log_and_draw_point(
     rr.log(f"world/{point_name}", rr_point)
     rr.log(f"{bbox_name}/{point_name}", rr_point)
 
-    point_2d = project_frame_to_image_plane(position, camera.intrinsics_matrix(), np.linalg.inv(camera_pose_in_left))
+    point_2d = project_frame_to_image_plane(position, camera.intrinsics_matrix(), np.linalg.inv(X_W_C))
     point_2d = point_2d.squeeze()
     point_2d_int = np.rint(point_2d).astype(int)
     cv2.circle(image, tuple(point_2d_int), 10, bbox_colors[bbox_name], thickness=2)
@@ -76,7 +77,16 @@ if __name__ == "__main__":
 
     window_name = "Cloth BBoxes"
 
-    camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
+    y_distance = 0.45
+    X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, -y_distance, 0]).GetAsMatrix4()
+    X_CB_B = RigidTransform(
+        rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]
+    ).GetAsMatrix4()  # 180 rotation between URDF base en control box base
+    X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
+    X_LCB_C, _ = load_camera_pose_in_left_and_right()
+    X_C_W = np.linalg.inv(X_LCB_C) @ X_LCB_W
+    X_W_C = np.linalg.inv(X_C_W)
+
     bbox_table = BBOX_CLOTH_ON_TABLE
     bbox_air = BBOX_CLOTH_IN_THE_AIR
 
@@ -87,13 +97,13 @@ if __name__ == "__main__":
 
     # Setting up rerun
     rr.init(window_name, spawn=True)
-    rr_log_camera(camera, camera_pose_in_left)
+    rr_log_camera(camera, X_W_C)
     rr_log_bboxes(bboxes, bbox_colors)
 
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     while True:
-        image_rgb, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, camera_pose_in_left)
+        image_rgb, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, X_W_C)
 
         rr_point_cloud = rr.Points3D(positions=point_cloud_filtered.points, colors=point_cloud_filtered.colors)
         rr.log("world/point_cloud", rr_point_cloud)

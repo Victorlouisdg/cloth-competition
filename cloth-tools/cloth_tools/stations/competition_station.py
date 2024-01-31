@@ -3,13 +3,14 @@ from typing import List
 import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
-from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e
+from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e_in_world
 from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
 from cloth_tools.drake.scenes import add_dual_ur5e_and_table_to_builder
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
 from cloth_tools.planning.interfaces import DualArmMotionPlanner
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from loguru import logger
+from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
 from ur_analytic_ik import ur5e
 
@@ -18,23 +19,29 @@ from ur_analytic_ik import ur5e
 tcp_transform = np.identity(4)
 tcp_transform[2, 3] = 0.175
 
-# R is short for "right robot base"
-X_W_R = np.identity(4)
-X_W_R[0, 3] = 0.9
-X_R_W = np.linalg.inv(X_W_R)
+y_distance = 0.45
+X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, -y_distance, 0]).GetAsMatrix4()
+X_W_R = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
+
+X_CB_B = RigidTransform(
+    rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]
+).GetAsMatrix4()  # 180 rotation between URDF base en control box base
+
+# LCB stands for "What the left control box considers to be the coordinate frame"
+X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
+X_RCB_W = X_CB_B @ np.linalg.inv(X_W_R)
 
 
 def left_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
-    # TODO: np.ascontiguousarray?
-    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(tcp_pose, tcp_transform)
+    X_W_TCP = tcp_pose
+    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_LCB_W @ X_W_TCP, tcp_transform)
     solutions = [solution.squeeze() for solution in solutions_1x6]
     return solutions
 
 
 def right_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
     X_W_TCP = tcp_pose
-    X_R_TCP = X_R_W @ X_W_TCP
-    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_R_TCP, tcp_transform)
+    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_RCB_W @ X_W_TCP, tcp_transform)
     solutions = [solution.squeeze() for solution in solutions_1x6]
     return solutions
 
@@ -51,10 +58,15 @@ class CompetitionStation(DualArmStation):
         # TODO start multiprocessed camera here and add video recorders etc.
         camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
         camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
-        camera_pose = camera_pose_in_left  # this must be consistent with the setup_dual_arm_ur5e call below
+
+        X_LCB_C = camera_pose_in_left  # Note: we could average between the extrinsics of the left and right camera
+        X_W_C = np.linalg.inv(X_LCB_W) @ X_LCB_C
+        camera_pose = X_W_C  # this must be consistent with the setup_dual_arm_ur5e call below
 
         # Setting up the robots and grippers
-        dual_arm = setup_dual_arm_ur5e(camera_pose_in_left, camera_pose_in_right)
+        X_W_LCB = np.linalg.inv(X_LCB_W)
+        X_W_RCB = np.linalg.inv(X_RCB_W)
+        dual_arm = setup_dual_arm_ur5e_in_world(X_W_LCB, X_W_RCB)
         super().__init__(dual_arm, camera, camera_pose)
 
         # Adding additional attributes

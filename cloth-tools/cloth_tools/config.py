@@ -26,7 +26,7 @@ def get_config_dir() -> str:
     return os.environ[CONFIG_DIR]
 
 
-def load_camera_pose_in_left_and_right() -> (Tuple[HomogeneousMatrixType, HomogeneousMatrixType]):
+def load_camera_pose_in_left_and_right() -> Tuple[HomogeneousMatrixType, HomogeneousMatrixType]:
     """Load the camera pose in the left and right robot's base frame.
 
     Returns:
@@ -62,4 +62,25 @@ def setup_dual_arm_ur5e(
     right_in_world = camera_pose_in_left @ np.linalg.inv(camera_pose_in_right)
 
     dual_arm = DualArmPositionManipulator(robot_left, left_in_world, robot_right, right_in_world)
+    return dual_arm
+
+
+def setup_dual_arm_ur5e_in_world(
+    X_W_LCB: HomogeneousMatrixType,
+    X_W_RCB: HomogeneousMatrixType,
+    ip_address_left: str = "10.42.0.163",
+    ip_address_right: str = "10.42.0.162",
+) -> DualArmPositionManipulator:
+    """Connect to the UR5e robots and Robotiq 2F-85 grippers. Sets the world frame to the base frame of the left robot.
+
+    Returns:
+        The initialized dual arm.
+    """
+    gripper_left = Robotiq2F85(ip_address_left)
+    robot_left = URrtde(ip_address_left, URrtde.UR3E_CONFIG, gripper_left)
+
+    gripper_right = Robotiq2F85(ip_address_right)
+    robot_right = URrtde(ip_address_right, URrtde.UR3E_CONFIG, gripper_right)
+
+    dual_arm = DualArmPositionManipulator(robot_left, X_W_LCB, robot_right, X_W_RCB)
     return dual_arm

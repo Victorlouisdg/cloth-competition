@@ -191,6 +191,7 @@ class GraspHighestController(Controller):
             rr.log("world/point_cloud", rr_point_cloud)
 
         cv2.imshow(self.__class__.__name__, image)
+        logger.info("Execute? Press (y/n) in OpenCV window.")
         key = cv2.waitKey(0)
         return image, key
 
