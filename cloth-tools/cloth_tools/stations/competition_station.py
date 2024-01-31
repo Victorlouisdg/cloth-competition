@@ -4,7 +4,8 @@ import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e
-from cloth_tools.drake.building import add_dual_ur5e_and_table_to_builder, add_meshcat_to_builder, finish_build
+from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
+from cloth_tools.drake.scenes import add_dual_ur5e_and_table_to_builder
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
 from cloth_tools.planning.interfaces import DualArmMotionPlanner
 from cloth_tools.stations.dual_arm_station import DualArmStation
