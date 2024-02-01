@@ -68,8 +68,8 @@ def add_dual_ur5e_and_table_to_builder(
     gripper_right_frame = plant.GetFrameByName("base_link", gripper_right_index)
 
     y_distance = 0.45
-    arm_left_transform = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, -y_distance, 0])
-    arm_right_transform = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, y_distance, 0])
+    arm_left_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, y_distance, 0])
+    arm_right_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, -y_distance, 0])
     robotiq_ur_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
 
     plant.WeldFrames(world_frame, arm_left_frame, arm_left_transform)

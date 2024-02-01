@@ -19,15 +19,11 @@ from ur_analytic_ik import ur5e
 tcp_transform = np.identity(4)
 tcp_transform[2, 3] = 0.175
 
-y_distance = 0.45
-X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, -y_distance, 0]).GetAsMatrix4()
-X_W_R = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
-
-X_CB_B = RigidTransform(
-    rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]
-).GetAsMatrix4()  # 180 rotation between URDF base en control box base
-
 # LCB stands for "What the left control box considers to be the coordinate frame"
+y_distance = 0.45
+X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
+X_W_R = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, -y_distance, 0]).GetAsMatrix4()
+X_CB_B = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]).GetAsMatrix4()
 X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
 X_RCB_W = X_CB_B @ np.linalg.inv(X_W_R)
 
@@ -125,5 +121,32 @@ class CompetitionStation(DualArmStation):
 
 
 if __name__ == "__main__":
+    import cv2
+    from airo_camera_toolkit.utils import ImageConverter
+    from cloth_tools.visualization.opencv import draw_pose
+
     # Check whether all hardware is connected
     station = CompetitionStation()
+    camera = station.camera
+
+    X_W_C = station.camera_pose
+    X_C_W = np.linalg.inv(X_W_C)
+    X_C_LCB = X_C_W @ np.linalg.inv(X_LCB_W)
+    X_C_RCB = X_C_W @ np.linalg.inv(X_RCB_W)
+
+    window_name = "Competiton station"
+    cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+    while True:
+        image_rgb = camera.get_rgb_image_as_int()
+        image_bgr = ImageConverter.from_numpy_int_format(image_rgb).image_in_opencv_format
+
+        # visualize X_C_W, X_C_LCB. X_C_RCB
+        draw_pose(image_bgr, X_C_W, camera.intrinsics_matrix(), np.identity(4), 0.25)
+        draw_pose(image_bgr, X_C_LCB, camera.intrinsics_matrix(), np.identity(4))
+        draw_pose(image_bgr, X_C_RCB, camera.intrinsics_matrix(), np.identity(4))
+
+        cv2.imshow(window_name, image_bgr)
+        key = cv2.waitKey(1)
+        if key == ord("q"):
+            break

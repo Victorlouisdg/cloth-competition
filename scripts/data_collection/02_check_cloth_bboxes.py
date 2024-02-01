@@ -77,11 +77,10 @@ if __name__ == "__main__":
 
     window_name = "Cloth BBoxes"
 
+    # X_CB_B is the 180 rotation between ROS URDF base en control box base
     y_distance = 0.45
-    X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, -np.pi / 2]), p=[0, -y_distance, 0]).GetAsMatrix4()
-    X_CB_B = RigidTransform(
-        rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]
-    ).GetAsMatrix4()  # 180 rotation between URDF base en control box base
+    X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
+    X_CB_B = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]).GetAsMatrix4()
     X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
     X_LCB_C, _ = load_camera_pose_in_left_and_right()
     X_C_W = np.linalg.inv(X_LCB_C) @ X_LCB_W
