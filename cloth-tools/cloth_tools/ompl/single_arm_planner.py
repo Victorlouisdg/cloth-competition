@@ -33,7 +33,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         self,
         is_state_valid_fn: JointConfigurationCheckerType,
         inverse_kinematics_fn: Optional[InverseKinematicsType] = None,
-        max_planning_time: float = 30.0,
+        max_planning_time: float = 10.0,
         num_interpolated_states: Optional[int] = 500,
     ):
         """Instiatiate a single-arm motion planner that uses OMPL. This creates
@@ -152,9 +152,14 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
             logger.info("No paths founds towards any IK solutions, returning None.")
             return None
 
-        logger.info(f"Found {len(paths)} paths towards IK solutions.")
+        logger.info(
+            f"Found {len(paths)} paths towards IK solutions, lengths: {[np.round(l, 2) for l in path_lengths]}."
+        )
 
         # Pick the shortest path
         shortest_path_idx = np.argmin(path_lengths)
+
+        logger.info(f"Length of solution (= shortest path): {path_lengths[shortest_path_idx]:.3f}")
+
         shortest_path = paths[shortest_path_idx]
         return shortest_path

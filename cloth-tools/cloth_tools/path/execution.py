@@ -30,6 +30,10 @@ def resample_path(path, n):
     m = len(path)
     path_new = []
 
+    # Prevent division by zero
+    if n == 1:
+        return [path[-1]]
+
     # example if m = 2 and n = 3, then i = 0, 1, 2 must produce j = 0, 0.5, 1, this i_to_j = 1/2 = (2-1)/(3-1)
     i_to_j = (m - 1) / (n - 1)
 

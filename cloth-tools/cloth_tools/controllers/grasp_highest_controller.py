@@ -16,8 +16,9 @@ from airo_typing import (
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
 from cloth_tools.controllers.controller import Controller
-from cloth_tools.controllers.home_controller import HomeController, execute_joint_path
+from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.visualization import publish_dual_arm_joint_path
+from cloth_tools.path.execution import calculate_dual_path_duration, execute_dual_arm_joint_path
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point
 from cloth_tools.stations.competition_station import CompetitionStation
@@ -83,9 +84,7 @@ class GraspHighestController(Controller):
         self._point_cloud: Optional[PointCloud] = None
         self._highest_point: Optional[Vector3DType] = None
         self._path_pregrasp: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
-        self._duration_pregrasp: Optional[float] = None
         self._path_hang: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
-        self._duration_hang: Optional[float] = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -105,7 +104,7 @@ class GraspHighestController(Controller):
         assert dual_arm.right_manipulator.gripper is not None  # For mypy
 
         # Execute the path to the pregrasp pose
-        execute_joint_path(dual_arm, self._path_pregrasp, self._duration_pregrasp)
+        execute_dual_arm_joint_path(dual_arm, self._path_pregrasp)
 
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(None, grasp_pose, linear_speed=0.2).wait()
@@ -113,7 +112,8 @@ class GraspHighestController(Controller):
         dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose, linear_speed=0.2).wait()
 
         # Hang the cloth in the air
-        execute_joint_path(dual_arm, self._path_hang, self._duration_hang)
+        execute_dual_arm_joint_path(dual_arm, self._path_hang)
+
         # dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
 
     def plan(self) -> None:
@@ -147,16 +147,13 @@ class GraspHighestController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
         path = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
-
         self._path_pregrasp = path
-        self._duration_pregrasp = 2.0 * planner._single_arm_planner_right._path_length
 
         # plan an additional path from the pregrasp joints to the hang joints
         # we operate under the assumption that the after the grasp the robot is back at the pregrasp pose with the same joint config
         pregrasp_joints_right = path[-1][1]
         path = planner.plan_to_joint_configuration(start_joints_left, pregrasp_joints_right, None, self.hang_joints)
         self._path_hang = path
-        self._duration_hang = 2.0 * planner._single_arm_planner_right._path_length
 
     def visualize_plan(self) -> Tuple[OpenCVIntImageType, Any]:
         if self._image is None:
@@ -179,8 +176,8 @@ class GraspHighestController(Controller):
 
         if self._path_pregrasp is not None:
             path = self._path_pregrasp
-            duration = self._duration_pregrasp
             station = self.station
+            duration = calculate_dual_path_duration(path)
             publish_dual_arm_joint_path(
                 path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
             )

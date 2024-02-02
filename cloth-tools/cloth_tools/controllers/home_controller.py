@@ -1,19 +1,10 @@
 import sys
 
-import numpy as np
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.drake.visualization import publish_dual_arm_joint_path
+from cloth_tools.path.execution import calculate_dual_path_duration, execute_dual_arm_joint_path
 from cloth_tools.stations.competition_station import CompetitionStation
 from loguru import logger
-
-
-def execute_joint_path(dual_arm, path, duration):
-    period = duration / len(path)
-    for joints_left, joints_right in path:
-        left_servo = dual_arm.left_manipulator.servo_to_joint_configuration(joints_left, period)
-        right_servo = dual_arm.right_manipulator.servo_to_joint_configuration(joints_right, period)
-        left_servo.wait()
-        right_servo.wait()
 
 
 class HomeController(Controller):
@@ -36,15 +27,11 @@ class HomeController(Controller):
             start_joints_left, start_joints_right, goal_joints_left, goal_joints_right
         )
         self._path = path
-        self._duration = 2.0 * planner._path_length_dual
-
-        # make path take at least 2 seconds, this is a quick fix for short paths with too many waypoints causing servo problems
-        self._duration = max(2.0, self._duration)
 
     def visualize_plan(self) -> None:
         path = self._path
-        duration = self._duration
         station = self.station
+        duration = calculate_dual_path_duration(path)
         publish_dual_arm_joint_path(
             path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
         )
@@ -54,13 +41,8 @@ class HomeController(Controller):
             logger.info("Home not executed because no path was found.")
             return
 
-        if self._duration is None:
-            logger.info("Home not executed because path duration was not set.")
-            return
-
         dual_arm = self.station.dual_arm
         path = self._path
-        duration = self._duration
 
         assert dual_arm.left_manipulator.gripper is not None
         assert dual_arm.right_manipulator.gripper is not None
@@ -70,11 +52,7 @@ class HomeController(Controller):
         left_opened.wait()
         right_opened.wait()
 
-        # This is an incomplete fix to the problem that all paths currently have a fixed amount of waypoints, no matter how short they are.
-        if np.isclose(duration, 0.0):
-            return
-
-        execute_joint_path(self.station.dual_arm, path, duration)
+        execute_dual_arm_joint_path(dual_arm, path)
 
     def execute_interactive(self) -> None:
         while True:

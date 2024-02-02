@@ -23,7 +23,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         is_state_valid_fn: DualJointConfigurationCheckerType,
         left_inverse_kinematics_fn: Optional[InverseKinematicsType] = None,
         right_inverse_kinematics_fn: Optional[InverseKinematicsType] = None,
-        max_planning_time: float = 30.0,
+        max_planning_time: float = 15.0,
         num_interpolated_states: Optional[int] = 500,
     ):
         self.is_state_valid_fn = is_state_valid_fn
