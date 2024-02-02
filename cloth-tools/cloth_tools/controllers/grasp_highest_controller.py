@@ -1,4 +1,5 @@
 import sys
+import time
 from typing import Any, List, Optional, Tuple
 
 import cv2
@@ -12,6 +13,7 @@ from airo_typing import (
     JointConfigurationType,
     OpenCVIntImageType,
     PointCloud,
+    RotationMatrixType,
     Vector3DType,
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
@@ -40,7 +42,7 @@ def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0
     Returns:
         The grasp pose.
     """
-    grasp_orientation = top_down_orientation([1, 0, 0])
+    grasp_orientation = top_down_orientation([0, -1, 0])
     grasp_location = highest_point.copy()
     grasp_location[2] -= grasp_depth
     grasp_location[2] = max(grasp_location[2], 0.01)  # grasp at least 1cm above robot base
@@ -50,19 +52,33 @@ def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0
     return grasp_pose
 
 
-def hang_in_the_air_joints(left: bool) -> JointConfigurationType:
-    """Hardcoded joint poses for the left arm right arm to hang the cloth in the air.
+def hang_in_the_air_tcp_orientation(left: bool) -> RotationMatrixType:
+    gripper_forward_direction = np.array([0, -1, 0]) if left else np.array([0, 1, 0])
+    Z = gripper_forward_direction / np.linalg.norm(gripper_forward_direction)
+    X = np.array([0, 0, -1])
+    Y = np.cross(Z, X)
+    return np.column_stack([X, Y, Z])
+
+
+def hang_in_the_air_tcp_pose(left: bool) -> HomogeneousMatrixType:
+    """Hardcoded TCP poses for the left arm right arm to hang the cloth in the air.
+
+    Assumes the world frame lies between the robot arms, and the left arm stand on the positive y-axis and the right arm
+    on the negative y-axis.
 
     Args:
         left: Whether the left or right arm will do the hanging.
 
     Returns:
-        The joint angles.
+        The TCP pose.
     """
-    if left:
-        return np.deg2rad([180, -90, 30, -120, -90, -90])
-    else:
-        return np.deg2rad([-180, -90, -30, -60, 90, 90])
+    position = np.array([0, 0, 0.9])  # 1 m is too close to a singularity
+    gripper_orientation = hang_in_the_air_tcp_orientation(left)
+
+    gripper_pose = np.identity(4)
+    gripper_pose[0:3, 0:3] = gripper_orientation
+    gripper_pose[0:3, 3] = position
+    return gripper_pose
 
 
 class GraspHighestController(Controller):
@@ -75,7 +91,8 @@ class GraspHighestController(Controller):
     def __init__(self, station: CompetitionStation, bbox: BoundingBox3DType):
         self.station = station
         self.bbox = bbox
-        self.hang_joints = hang_in_the_air_joints(left=False)
+
+        self.joint_speed = 1.0  # rad/s
 
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
@@ -104,7 +121,7 @@ class GraspHighestController(Controller):
         assert dual_arm.right_manipulator.gripper is not None  # For mypy
 
         # Execute the path to the pregrasp pose
-        execute_dual_arm_joint_path(dual_arm, self._path_pregrasp)
+        execute_dual_arm_joint_path(dual_arm, self._path_pregrasp, self.joint_speed)
 
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(None, grasp_pose, linear_speed=0.2).wait()
@@ -112,7 +129,7 @@ class GraspHighestController(Controller):
         dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose, linear_speed=0.2).wait()
 
         # Hang the cloth in the air
-        execute_dual_arm_joint_path(dual_arm, self._path_hang)
+        execute_dual_arm_joint_path(dual_arm, self._path_hang, self.joint_speed)
 
         # dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
 
@@ -120,6 +137,7 @@ class GraspHighestController(Controller):
         camera = self.station.camera
         camera_pose = self.station.camera_pose
 
+        time.sleep(1.0)  # without this sleep I've noticed motion blur on the images e.g. is the cloth has just fallen
         image_rgb, point_cloud = get_image_and_filtered_point_cloud(camera, camera_pose)
         image = ImageConverter.from_numpy_int_format(image_rgb).image_in_opencv_format
 
@@ -152,8 +170,22 @@ class GraspHighestController(Controller):
         # plan an additional path from the pregrasp joints to the hang joints
         # we operate under the assumption that the after the grasp the robot is back at the pregrasp pose with the same joint config
         pregrasp_joints_right = path[-1][1]
-        path = planner.plan_to_joint_configuration(start_joints_left, pregrasp_joints_right, None, self.hang_joints)
-        self._path_hang = path
+
+        # Warning: only implemented for right arm at the moment, when implementing for left arm, change args in plan_()
+        self._hang_tcp_pose = hang_in_the_air_tcp_pose(left=False)
+        path_hang = planner.plan_to_tcp_pose(start_joints_left, pregrasp_joints_right, None, self._hang_tcp_pose)
+
+        self._path_hang = path_hang
+
+    def _can_execute(self) -> bool:
+        # maybe this should just be a property?
+        if self._path_pregrasp is None:
+            return False
+
+        if self._path_hang is None:
+            return False
+
+        return True
 
     def visualize_plan(self) -> Tuple[OpenCVIntImageType, Any]:
         if self._image is None:
@@ -174,23 +206,38 @@ class GraspHighestController(Controller):
             rr_grasp_pose = rr.Transform3D(translation=grasp_pose[0:3, 3], mat3x3=grasp_pose[0:3, 0:3])
             rr.log("world/grasp_pose", rr_grasp_pose)
 
+        if self._hang_tcp_pose is not None:
+            hang_tcp_pose = self._hang_tcp_pose
+            draw_pose(image, hang_tcp_pose, intrinsics, camera_pose)
+
+            rr_hang_tcp_pose = rr.Transform3D(translation=hang_tcp_pose[0:3, 3], mat3x3=hang_tcp_pose[0:3, 0:3])
+            rr.log("world/hang_tcp_pose", rr_hang_tcp_pose)
+
         if self._path_pregrasp is not None:
             path = self._path_pregrasp
             station = self.station
-            duration = calculate_dual_path_duration(path)
+            duration = calculate_dual_path_duration(path, self.joint_speed)
             publish_dual_arm_joint_path(
                 path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
             )
+            # TODO find a way to also publish the hang path, maybe just append it?
 
         if self._point_cloud is not None:
             point_cloud = self._point_cloud
             rr_point_cloud = rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors)
             rr.log("world/point_cloud", rr_point_cloud)
 
-        cv2.imshow(self.__class__.__name__, image)
-        logger.info("Execute? Press (y/n) in OpenCV window.")
-        key = cv2.waitKey(0)
-        return image, key
+        if self._can_execute():
+            image_annotated = image.copy()
+            text = "Execute? Press (y/n)"
+            cv2.putText(image_annotated, text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
+            logger.info(f"{self.__class__.__name__}: {text} in OpenCV window.")
+            cv2.imshow(self.__class__.__name__, image_annotated)
+            key = cv2.waitKey(0)
+            return image, key
+        else:
+            cv2.imshow(self.__class__.__name__, image)
+            return image, cv2.waitKey(1)
 
     def execute_plan(self) -> None:
         if self._grasp_pose is None:

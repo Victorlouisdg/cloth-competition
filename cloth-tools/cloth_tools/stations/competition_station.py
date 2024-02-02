@@ -128,6 +128,7 @@ if __name__ == "__main__":
     # Check whether all hardware is connected
     station = CompetitionStation()
     camera = station.camera
+    dual_arm = station.dual_arm
 
     X_W_C = station.camera_pose
     X_C_W = np.linalg.inv(X_W_C)
@@ -141,10 +142,18 @@ if __name__ == "__main__":
         image_rgb = camera.get_rgb_image_as_int()
         image_bgr = ImageConverter.from_numpy_int_format(image_rgb).image_in_opencv_format
 
-        # visualize X_C_W, X_C_LCB. X_C_RCB
+        X_CB_LTCP = dual_arm.left_manipulator.get_tcp_pose()
+        X_CB_RTCP = dual_arm.right_manipulator.get_tcp_pose()
+
+        X_C_LTCP = X_C_LCB @ X_CB_LTCP
+        X_C_RTCP = X_C_RCB @ X_CB_RTCP
+
+        # visualize X_C_W, X_C_LCB. X_C_RCB, X_C_LTCP, X_C_RTCP
         draw_pose(image_bgr, X_C_W, camera.intrinsics_matrix(), np.identity(4), 0.25)
         draw_pose(image_bgr, X_C_LCB, camera.intrinsics_matrix(), np.identity(4))
         draw_pose(image_bgr, X_C_RCB, camera.intrinsics_matrix(), np.identity(4))
+        draw_pose(image_bgr, X_C_LTCP, camera.intrinsics_matrix(), np.identity(4), 0.05)
+        draw_pose(image_bgr, X_C_RTCP, camera.intrinsics_matrix(), np.identity(4), 0.05)
 
         cv2.imshow(window_name, image_bgr)
         key = cv2.waitKey(1)

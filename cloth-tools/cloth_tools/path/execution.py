@@ -97,6 +97,10 @@ def _servo_dual_arm_joint_path(
         left_servo.wait()
         right_servo.wait()
 
+    # This avoids the abrupt stop and "thunk" sounds at the end of paths that end with non-zero velocity
+    dual_arm.left_manipulator.rtde_control.servoStop(4.0)
+    dual_arm.right_manipulator.rtde_control.servoStop(4.0)
+
 
 def execute_dual_arm_joint_path(dual_arm, path, joint_speed=0.5):
     duration = calculate_dual_path_duration(path, joint_speed)
