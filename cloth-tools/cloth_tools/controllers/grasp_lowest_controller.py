@@ -14,21 +14,24 @@ from airo_typing import (
     RotationMatrixType,
     Vector3DType,
 )
-from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR
+from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.home_controller import HomeController
+from cloth_tools.drake.visualization import publish_dual_arm_joint_path
+from cloth_tools.path.execution import calculate_dual_path_duration, execute_dual_arm_joint_path
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
+from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 
 
 def flatter_orientation(gripper_forward_direction: Vector3DType) -> RotationMatrixType:
     Z = gripper_forward_direction / np.linalg.norm(gripper_forward_direction)
-    Y = np.array([0, 0, 1])
+    Y = np.array([0, 0, -1])  # 0, 0, 1 is also an option
     X = np.cross(Y, Z)
     return np.column_stack([X, Y, Z])
 
@@ -44,10 +47,11 @@ def lowest_point_grasp_pose(
     Returns:
         The grasp pose.
     """
-    grasp_orientation = flatter_orientation(np.array([0, 1, 0]))
+    gripper_forward_direction = np.array([1, 0, 0])
+    grasp_orientation = flatter_orientation(gripper_forward_direction)
     grasp_location = lowest_point.copy()
-    grasp_location[1] += grasp_depth
-    grasp_location[2] += height_offset
+    grasp_location += gripper_forward_direction * grasp_depth
+    grasp_location[2] += height_offset  # Move the TCP pose a bit up into the cloth
     grasp_pose = np.identity(4)
     grasp_pose[0:3, 0:3] = grasp_orientation
     grasp_pose[0:3, 3] = grasp_location
@@ -65,11 +69,15 @@ class GraspLowestController(Controller):
         self.station = station
         self.bbox = bbox
 
+        self.joint_speed = 0.3  # rad/s
+
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
         self._grasp_pose: Optional[HomogeneousMatrixType] = None
         self._point_cloud: Optional[PointCloud] = None
         self._lowest_point: Optional[Vector3DType] = None
+        self._pregrasp_pose: Optional[HomogeneousMatrixType] = None
+        self._path_pregrasp: Optional[Any] = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -82,18 +90,21 @@ class GraspLowestController(Controller):
         # Setting up Rerun
         rr.init(window_name, spawn=True)
         rr_log_camera(camera, camera_pose)
+        bbox_color = (122, 173, 255)  # cyan
+        bbox_mins, bbox_sizes = bbox_to_mins_and_sizes(bbox)
+        rr_bbox = rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color)
+        rr.log("world/bbox", rr_bbox)
 
-    def execute_handover(self, grasp_pose: HomogeneousMatrixType) -> None:
+    def execute_handover(self) -> None:
         self.station.dual_arm
 
-        # assert dual_arm.left_manipulator.gripper is not None
+        # Execute the path to the pregrasp pose
+        execute_dual_arm_joint_path(dual_arm, self._path_pregrasp, self.joint_speed)
 
-        # pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
-        # dual_arm.move_linear_to_tcp_pose(pregrasp_pose, None).wait()  # TODO make this a move_to_tcp_pose
-
-        # # Execute the grasp
-        # dual_arm.move_linear_to_tcp_pose(grasp_pose, None, linear_speed=0.2)
-        # dual_arm.left_manipulator.gripper.close().wait()
+        # Execute the grasp
+        dual_arm.move_linear_to_tcp_pose(self._grasp_pose, None, linear_speed=0.2).wait()
+        dual_arm.left_manipulator.gripper.close().wait()
+        dual_arm.move_linear_to_tcp_pose(self._pregrasp_pose, None, linear_speed=0.2).wait()
 
         # Open the right gripper of the cloth be released
         # dual_arm.right_manipulator.gripper.open().wait()
@@ -121,6 +132,24 @@ class GraspLowestController(Controller):
         self._lowest_point = lowest_point_
         self._grasp_pose = grasp_pose
 
+        pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
+        self._pregrasp_pose = pregrasp_pose
+
+        # For now use the planner from the station without obstacle for the cloth
+        planner = self.station.planner
+        dual_arm = self.station.dual_arm
+        start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
+        start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
+        path = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, pregrasp_pose, None)
+        self._path_pregrasp = path
+
+    def _can_execute(self) -> bool:
+        # maybe this should just be a property?
+        if self._path_pregrasp is None:
+            return False
+
+        return True
+
     def visualize_plan(self) -> Tuple[OpenCVIntImageType, Any]:
         if self._image is None:
             raise RuntimeError("You must call plan() before visualize_plan().")
@@ -140,20 +169,38 @@ class GraspLowestController(Controller):
             rr_grasp_pose = rr.Transform3D(translation=grasp_pose[0:3, 3], mat3x3=grasp_pose[0:3, 0:3])
             rr.log("world/grasp_pose", rr_grasp_pose)
 
+        if self._path_pregrasp is not None:
+            path = self._path_pregrasp
+            station = self.station
+            duration = calculate_dual_path_duration(path, self.joint_speed)
+            publish_dual_arm_joint_path(
+                path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
+            )
+
         if self._point_cloud is not None:
             point_cloud = self._point_cloud
             rr_point_cloud = rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors)
             rr.log("world/point_cloud", rr_point_cloud)
 
-        cv2.imshow(self.__class__.__name__, image)
-        key = cv2.waitKey(1)
-        return image, key
+        # Duplicated from GraspHighestController
+        if self._can_execute():
+            image_annotated = image.copy()
+            text = "Execute? Press (y/n)"
+            cv2.putText(image_annotated, text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
+            logger.info(f"{self.__class__.__name__}: {text} in OpenCV window.")
+            cv2.imshow(self.__class__.__name__, image_annotated)
+            key = cv2.waitKey(0)
+            return image, key
+        else:
+            cv2.imshow(self.__class__.__name__, image)
+            return image, cv2.waitKey(1)
 
     def execute_plan(self) -> None:
+        # TODO bring execute_handover() here
         if self._grasp_pose is None:
             logger.info("Grasp and hang not executed because no grasp pose was found.")
             return
-        self.execute_handover(self._grasp_pose)
+        self.execute_handover()
 
     # TODO: remove this duplication, maybe through inheritance?
     def execute_interactive(self) -> None:
@@ -186,18 +233,12 @@ class GraspLowestController(Controller):
 
 if __name__ == "__main__":
     station = CompetitionStation()
-
     dual_arm = station.dual_arm
 
-    # Only move left arm home
-    # assert dual_arm.left_manipulator.gripper is not None
-    # dual_arm.left_manipulator.gripper.open().wait()
-    # dual_arm.left_manipulator.move_to_joint_configuration(station.home_joints_left).wait()
-
     # Move only left arm to home. right might be holding the cloth
-    home_controller = HomeController(station, move_right_home=False)
+    home_controller = HomeController(station, move_right_home=False, open_right_gripper=False)
     home_controller.execute(interactive=True)
 
     # Assumes the right arm is holding the cloth in the air
     grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
-    # grasp_lowest_controller.execute(interactive=True)
+    grasp_lowest_controller.execute(interactive=True)

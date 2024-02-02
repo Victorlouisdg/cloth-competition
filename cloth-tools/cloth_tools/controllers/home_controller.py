@@ -12,10 +12,19 @@ class HomeController(Controller):
     Opens the grippers and move the arms to their home positions.
     """
 
-    def __init__(self, station: CompetitionStation, move_left_home: bool = True, move_right_home: bool = True):
+    def __init__(
+        self,
+        station: CompetitionStation,
+        move_left_home: bool = True,
+        move_right_home: bool = True,
+        open_left_gripper: bool = True,
+        open_right_gripper: bool = True,
+    ):
         self.station = station
         self.move_left_home = move_left_home
         self.move_right_home = move_right_home
+        self.open_left_gripper = open_left_gripper
+        self.open_right_gripper = open_right_gripper
 
     def plan(self) -> None:
         dual_arm = self.station.dual_arm
@@ -55,10 +64,14 @@ class HomeController(Controller):
         assert dual_arm.left_manipulator.gripper is not None
         assert dual_arm.right_manipulator.gripper is not None
 
-        left_opened = dual_arm.left_manipulator.gripper.open()
-        right_opened = dual_arm.right_manipulator.gripper.open()
-        left_opened.wait()
-        right_opened.wait()
+        if self.open_left_gripper:
+            left_opened = dual_arm.left_manipulator.gripper.open()
+        if self.open_right_gripper:
+            right_opened = dual_arm.right_manipulator.gripper.open()
+        if self.open_left_gripper:
+            left_opened.wait()
+        if self.open_right_gripper:
+            right_opened.wait()
 
         execute_dual_arm_joint_path(dual_arm, path)
 

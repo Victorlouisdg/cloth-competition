@@ -16,7 +16,7 @@ from airo_typing import (
     RotationMatrixType,
     Vector3DType,
 )
-from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
+from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.visualization import publish_dual_arm_joint_path
@@ -114,6 +114,10 @@ class GraspHighestController(Controller):
         # Setting up Rerun
         rr.init(window_name, spawn=True)
         rr_log_camera(camera, camera_pose)
+        bbox_color = (255, 231, 122)  # yellow
+        bbox_mins, bbox_sizes = bbox_to_mins_and_sizes(bbox)
+        rr_bbox = rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color)
+        rr.log("world/bbox", rr_bbox)
 
     def execute_grasp_and_hang(self, grasp_pose: HomogeneousMatrixType, pregrasp_pose: HomogeneousMatrixType) -> None:
         dual_arm = self.station.dual_arm
