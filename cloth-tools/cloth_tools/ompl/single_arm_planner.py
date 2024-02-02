@@ -92,7 +92,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
 
     def plan_to_joint_configuration(
         self, start_configuration: JointConfigurationType, goal_configuration: JointConfigurationType
-    ):
+    ) -> List[JointConfigurationType] | None:
         self._simple_setup.clear()  # Needed to support multiple calls with different start/goal configurations
 
         self._set_start_and_goal_configurations(start_configuration, goal_configuration)
@@ -122,7 +122,9 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         path_numpy = ompl_path_to_numpy(path, self.degrees_of_freedom)
         return path_numpy
 
-    def plan_to_tcp_pose(self, start_configuration, tcp_pose_in_base):
+    def plan_to_tcp_pose(
+        self, start_configuration: JointConfigurationType, tcp_pose_in_base: HomogeneousMatrixType
+    ) -> List[JointConfigurationType] | None:
         if self.inverse_kinematics_fn is None:
             logger.warning("Planning to TCP pose attempted but inverse_kinematics_fn was provided, returing None.")
             return None

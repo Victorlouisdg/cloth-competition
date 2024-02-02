@@ -1,4 +1,7 @@
+from typing import List, Tuple
+
 import numpy as np
+from airo_robots.manipulators.bimanual_position_manipulator import DualArmPositionManipulator
 
 
 def calculate_path_array_duration(path_array: np.ndarray, max_allowed_speed: float = 0.5) -> float:
@@ -68,23 +71,33 @@ def ensure_dual_arm_at_joint_configuration(dual_arm, joints_left, joints_right, 
         )
 
 
-# def execute_joint_path_naive(dual_arm, path, duration):
-#     period = duration / len(path)
-#     for joints_left, joints_right in path:
-#         left_servo = dual_arm.left_manipulator.servo_to_joint_configuration(joints_left, period)
-#         right_servo = dual_arm.right_manipulator.servo_to_joint_configuration(joints_right, period)
-#         left_servo.wait()
-#         right_servo.wait()
+def _servo_dual_arm_joint_path(
+    dual_arm: DualArmPositionManipulator, path: List[Tuple[np.ndarray, np.ndarray]], period=0.005
+):
+    """Servo the dual arm along given path, with a fixed time between each configuration.
+
+    The default period of 0.005 seconds corresponds to 200 Hz.
+    The e-series should be able to handle 500 Hz.
+
+    Args:
+        dual_arm: the robot arms
+        path: the dual arm path to servo along
+        period: float, time between each configuration in seconds
+
+    """
+    ensure_dual_arm_at_joint_configuration(dual_arm, path[0][0], path[0][1])
+
+    for joints_left, joints_right in path:
+        left_servo = dual_arm.left_manipulator.servo_to_joint_configuration(joints_left, period)
+        right_servo = dual_arm.right_manipulator.servo_to_joint_configuration(joints_right, period)
+        left_servo.wait()
+        right_servo.wait()
 
 
 def execute_dual_arm_joint_path(dual_arm, path, joint_speed=0.5):
-    ensure_dual_arm_at_joint_configuration(dual_arm, path[0][0], path[0][1])
-
     duration = calculate_dual_path_duration(path, joint_speed)
 
-    # TODO check whether arms are close to path start?
-    period = 0.005  # 200 Hz, e-series should be able to handle 500 Hz
-
+    period = 0.005
     n_servos = int(np.ceil(duration / period))
 
     path_left = [joint_left for joint_left, _ in path]
@@ -93,8 +106,4 @@ def execute_dual_arm_joint_path(dual_arm, path, joint_speed=0.5):
     path_right_resampled = resample_path(path_right, n_servos)
     path_resampled = list(zip(path_left_resampled, path_right_resampled))
 
-    for joints_left, joints_right in path_resampled:
-        left_servo = dual_arm.left_manipulator.servo_to_joint_configuration(joints_left, period)
-        right_servo = dual_arm.right_manipulator.servo_to_joint_configuration(joints_right, period)
-        left_servo.wait()
-        right_servo.wait()
+    _servo_dual_arm_joint_path(dual_arm, path_resampled, period)

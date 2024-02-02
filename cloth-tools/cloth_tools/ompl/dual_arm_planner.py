@@ -261,13 +261,6 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         left_tcp_pose_in_base: HomogeneousMatrixType,
         right_tcp_pose_in_base: HomogeneousMatrixType,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
-        # TODO
-        # 1. .do IK for both arms
-        # 2. create all goal pairs
-        # 3. filter out invalid goal pairs
-        # 4. for each pair, plan to the goal pair
-        # 5. return the shortest path among all the planned paths
-
         if self.left_inverse_kinematics_fn is None or self.right_inverse_kinematics_fn is None:
             logger.info(
                 "Planning to left and right TCP poses attempted but inverse_kinematics_fn was not provided for both arms, returing None."
@@ -328,33 +321,6 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         shortest_path_idx = np.argmin(path_lengths)
         shortest_path = paths[shortest_path_idx]
         return shortest_path
-
-        # 2. filter out invalid IK solutions
-        # left_ik_solutions_valid = [s for s in left_ik_solutions if self.is_state_valid_fn(s)]
-        # right_ik_solutions_valid = [s for s in right_ik_solutions if self.is_state_valid_fn(s)]
-
-        # Set left goal to left start configuration
-        # self._set_start_and_goal_configurations(
-        #     left_start_configuration, right_start_configuration, left_start_configuration, right_start_configuration
-        # )
-
-        # path = self._simple_setup.solve(self.max_planning_time)
-
-        # if not self._simple_setup.haveExactSolutionPath():
-        #     return None
-
-        # # Simplify, smooth and interpolate the solution path
-        # self._simple_setup.simplifySolution()
-        # path_simplifier = og.PathSimplifier(self._simple_setup.getSpaceInformation())
-        # path = self._simple_setup.getSolutionPath()
-        # path_simplifier.smoothBSpline(path)
-        # self._simple_setup.simplifySolution()
-        # if self.num_interpolated_states is not None:
-        #     path.interpolate(self.num_interpolated_states)
-
-        # path_numpy = ompl_path_to_numpy(path, self.degrees_of_freedom)
-        # path_tuple = [(state[:6], state[6:]) for state in path_numpy]
-        # return path_tuple
 
     def plan_to_tcp_pose(
         self,
