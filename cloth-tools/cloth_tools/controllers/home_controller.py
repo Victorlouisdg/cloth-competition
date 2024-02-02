@@ -12,8 +12,10 @@ class HomeController(Controller):
     Opens the grippers and move the arms to their home positions.
     """
 
-    def __init__(self, station: CompetitionStation):
+    def __init__(self, station: CompetitionStation, move_left_home: bool = True, move_right_home: bool = True):
         self.station = station
+        self.move_left_home = move_left_home
+        self.move_right_home = move_right_home
 
     def plan(self) -> None:
         dual_arm = self.station.dual_arm
@@ -21,6 +23,12 @@ class HomeController(Controller):
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
         goal_joints_left = self.station.home_joints_left
         goal_joints_right = self.station.home_joints_right
+
+        if not self.move_left_home:
+            goal_joints_left = None
+
+        if not self.move_right_home:
+            goal_joints_right = None
 
         planner = self.station.planner
         path = planner.plan_to_joint_configuration(

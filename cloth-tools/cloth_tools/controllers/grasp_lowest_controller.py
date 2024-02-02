@@ -16,14 +16,13 @@ from airo_typing import (
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR
 from cloth_tools.controllers.controller import Controller
-from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_joints
+from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
-from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 
 
@@ -65,7 +64,6 @@ class GraspLowestController(Controller):
     def __init__(self, station: DualArmStation, bbox: BoundingBox3DType):
         self.station = station
         self.bbox = bbox
-        self.hang_joints = hang_in_the_air_joints(left=True)
 
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
@@ -86,16 +84,16 @@ class GraspLowestController(Controller):
         rr_log_camera(camera, camera_pose)
 
     def execute_handover(self, grasp_pose: HomogeneousMatrixType) -> None:
-        dual_arm = self.station.dual_arm
+        self.station.dual_arm
 
-        assert dual_arm.left_manipulator.gripper is not None
+        # assert dual_arm.left_manipulator.gripper is not None
 
-        pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
-        dual_arm.move_linear_to_tcp_pose(pregrasp_pose, None).wait()  # TODO make this a move_to_tcp_pose
+        # pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
+        # dual_arm.move_linear_to_tcp_pose(pregrasp_pose, None).wait()  # TODO make this a move_to_tcp_pose
 
-        # Execute the grasp
-        dual_arm.move_linear_to_tcp_pose(grasp_pose, None, linear_speed=0.2)
-        dual_arm.left_manipulator.gripper.close().wait()
+        # # Execute the grasp
+        # dual_arm.move_linear_to_tcp_pose(grasp_pose, None, linear_speed=0.2)
+        # dual_arm.left_manipulator.gripper.close().wait()
 
         # Open the right gripper of the cloth be released
         # dual_arm.right_manipulator.gripper.open().wait()
@@ -192,10 +190,14 @@ if __name__ == "__main__":
     dual_arm = station.dual_arm
 
     # Only move left arm home
-    assert dual_arm.left_manipulator.gripper is not None
-    dual_arm.left_manipulator.gripper.open().wait()
-    dual_arm.left_manipulator.move_to_joint_configuration(station.home_joints_left).wait()
+    # assert dual_arm.left_manipulator.gripper is not None
+    # dual_arm.left_manipulator.gripper.open().wait()
+    # dual_arm.left_manipulator.move_to_joint_configuration(station.home_joints_left).wait()
+
+    # Move only left arm to home. right might be holding the cloth
+    home_controller = HomeController(station, move_right_home=False)
+    home_controller.execute(interactive=True)
 
     # Assumes the right arm is holding the cloth in the air
     grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
-    grasp_lowest_controller.execute(interactive=True)
+    # grasp_lowest_controller.execute(interactive=True)
