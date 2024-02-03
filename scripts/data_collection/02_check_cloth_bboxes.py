@@ -90,9 +90,9 @@ if __name__ == "__main__":
     bbox_air = BBOX_CLOTH_IN_THE_AIR
 
     yellow = (255, 231, 122)
-    cyan = (122, 173, 255)
+    blue = (122, 173, 255)
     bboxes = {"bbox_table": bbox_table, "bbox_air": bbox_air}
-    bbox_colors = {"bbox_table": yellow, "bbox_air": cyan}
+    bbox_colors = {"bbox_table": yellow, "bbox_air": blue}
 
     # Setting up rerun
     rr.init(window_name, spawn=True)

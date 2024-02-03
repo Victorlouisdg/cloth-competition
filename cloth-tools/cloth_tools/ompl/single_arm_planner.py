@@ -133,11 +133,15 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         if ik_solutions is None or len(ik_solutions) == 0:
             logger.info("IK returned no solutions, returning None.")
             return None
+        else:
+            logger.info(f"IK returned {len(ik_solutions)} solutions.")
 
         ik_solutions_valid = [s for s in ik_solutions if self.is_state_valid_fn(s)]
         if len(ik_solutions_valid) == 0:
             logger.info("All IK solutions are invalid, returning None.")
             return None
+        else:
+            logger.info(f"Found {len(ik_solutions_valid)}/{len(ik_solutions)} valid solutions.")
 
         # Try solving to each IK solution in joint space.
         paths = []

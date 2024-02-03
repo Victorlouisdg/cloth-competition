@@ -22,7 +22,7 @@ dependencies = [
     "click",
     "rerun-sdk",
     "pydrake",
-    "airo-models >= 0.0.6",
+    "airo-models >= 0.0.7",
     "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing",
     "airo-spatial-algebra @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-spatial-algebra",
     "airo-robots @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-robots",

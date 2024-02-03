@@ -90,7 +90,7 @@ class GraspLowestController(Controller):
         # Setting up Rerun
         rr.init(window_name, spawn=True)
         rr_log_camera(camera, camera_pose)
-        bbox_color = (122, 173, 255)  # cyan
+        bbox_color = (122, 173, 255)  # blue
         bbox_mins, bbox_sizes = bbox_to_mins_and_sizes(bbox)
         rr_bbox = rr.Boxes3D(mins=bbox_mins, sizes=bbox_sizes, colors=bbox_color)
         rr.log("world/bbox", rr_bbox)

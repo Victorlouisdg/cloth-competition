@@ -1,5 +1,5 @@
 import numpy as np
-from airo_camera_toolkit.point_clouds.operations import crop_point_cloud_mask, filter_point_cloud
+from airo_camera_toolkit.point_clouds.operations import filter_point_cloud, generate_point_cloud_crop_mask
 from airo_typing import BoundingBox3DType, NumpyDepthMapType, PointCloud, PointCloudPositionsType
 
 
@@ -31,7 +31,7 @@ def filter_and_crop_point_cloud(
     """
     # Filter the low confidence points
     confidence_mask = (confidence_map <= confidence_threshold).reshape(-1)  # Threshold and flatten
-    crop_mask = crop_point_cloud_mask(point_cloud, bounding_box)
+    crop_mask = generate_point_cloud_crop_mask(point_cloud, bounding_box)
 
     # Combine the masks
     mask = confidence_mask & crop_mask
