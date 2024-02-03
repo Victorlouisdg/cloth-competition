@@ -3,7 +3,7 @@ import cv2
 from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_camera_toolkit.interfaces import StereoRGBDCamera
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
-from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_typing import CameraExtrinsicMatrixType
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR
 from cloth_tools.config import load_camera_pose_in_left_and_right

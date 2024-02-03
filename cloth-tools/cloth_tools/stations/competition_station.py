@@ -122,7 +122,7 @@ class CompetitionStation(DualArmStation):
 
 if __name__ == "__main__":
     import cv2
-    from airo_camera_toolkit.utils import ImageConverter
+    from airo_camera_toolkit.utils.image_converter import ImageConverter
     from cloth_tools.visualization.opencv import draw_pose
 
     # Check whether all hardware is connected

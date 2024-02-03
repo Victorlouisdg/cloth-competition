@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from airo_camera_toolkit.cameras.zed2i import Zed2i
-from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.utils.image_converter import ImageConverter
 from cloth_tools.config import load_camera_pose_in_left_and_right
 from cloth_tools.visualization.opencv import draw_pose
 from pydrake.math import RigidTransform, RollPitchYaw

@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
-from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,

@@ -11,7 +11,7 @@ import rerun as rr
 from airo_camera_toolkit.cameras.zed2i import Zed2i
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.reprojection import project_frame_to_image_plane
-from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_typing import BoundingBox3DType, NumpyIntImageType, PointCloud, Vector3DType
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, BBOX_CLOTH_ON_TABLE, bbox_to_mins_and_sizes
 from cloth_tools.config import load_camera_pose_in_left_and_right

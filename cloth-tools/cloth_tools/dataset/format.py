@@ -5,7 +5,7 @@ from pathlib import Path
 import cv2
 import open3d as o3d
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
-from airo_camera_toolkit.utils import ImageConverter
+from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_dataset_tools.data_parsers.camera_intrinsics import CameraIntrinsics
 from airo_dataset_tools.data_parsers.pose import Pose
 from airo_typing import (
