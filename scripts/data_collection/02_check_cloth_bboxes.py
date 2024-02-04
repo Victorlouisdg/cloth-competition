@@ -8,10 +8,13 @@ from typing import Dict, Tuple
 import cv2
 import numpy as np
 import rerun as rr
-from airo_camera_toolkit.cameras.zed2i import Zed2i
+from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
+from airo_camera_toolkit.pinhole_operations.projection import project_points_to_image_plane
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
-from airo_camera_toolkit.reprojection import project_frame_to_image_plane
+
+# from airo_camera_toolkit.reprojection import project_frame_to_image_plane
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from airo_spatial_algebra import transform_points
 from airo_typing import BoundingBox3DType, NumpyIntImageType, PointCloud, Vector3DType
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, BBOX_CLOTH_ON_TABLE, bbox_to_mins_and_sizes
 from cloth_tools.config import load_camera_pose_in_left_and_right
@@ -29,7 +32,9 @@ def log_and_draw_point(
     rr.log(f"world/{point_name}", rr_point)
     rr.log(f"{bbox_name}/{point_name}", rr_point)
 
-    point_2d = project_frame_to_image_plane(position, camera.intrinsics_matrix(), np.linalg.inv(X_W_C))
+    X_C_W = np.linalg.inv(X_W_C)
+    point_2d = project_points_to_image_plane(transform_points(X_C_W, position), camera.intrinsics_matrix())
+    # point_2d = project_frame_to_image_plane(position, camera.intrinsics_matrix(), np.linalg.inv(X_W_C))
     point_2d = point_2d.squeeze()
     point_2d_int = np.rint(point_2d).astype(int)
     cv2.circle(image, tuple(point_2d_int), 10, bbox_colors[bbox_name], thickness=2)

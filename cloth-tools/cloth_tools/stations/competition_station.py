@@ -1,7 +1,7 @@
 from typing import List
 
 import numpy as np
-from airo_camera_toolkit.cameras.zed2i import Zed2i
+from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e_in_world
 from cloth_tools.drake.building import add_meshcat_to_builder, finish_build

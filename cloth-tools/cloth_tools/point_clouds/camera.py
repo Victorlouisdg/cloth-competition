@@ -1,6 +1,6 @@
 from typing import Tuple
 
-from airo_camera_toolkit.cameras.zed2i import Zed2i
+from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.point_clouds.operations import filter_point_cloud
 from airo_typing import HomogeneousMatrixType, NumpyIntImageType, PointCloud

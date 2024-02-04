@@ -1,5 +1,5 @@
 import numpy as np
-from airo_camera_toolkit.cameras.zed2i import Zed2i
+from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_robots.manipulators.bimanual_position_manipulator import DualArmPositionManipulator
 from airo_typing import CameraExtrinsicMatrixType
 

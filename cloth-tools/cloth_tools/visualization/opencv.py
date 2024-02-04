@@ -2,8 +2,8 @@ from typing import Tuple
 
 import cv2
 import numpy as np
-from airo_camera_toolkit.reprojection import project_frame_to_image_plane
-from airo_spatial_algebra import SE3Container
+from airo_camera_toolkit.pinhole_operations.projection import project_points_to_image_plane
+from airo_spatial_algebra import SE3Container, transform_points
 from airo_typing import CameraIntrinsicsMatrixType, HomogeneousMatrixType, OpenCVIntImageType, Vector3DType
 
 
@@ -21,8 +21,8 @@ def draw_point_3d(
         point_3d: The 3D point to draw.
         color: The color of the point.
     """
-    point_2d = project_frame_to_image_plane(point_3d, intrinsics, np.linalg.inv(camera_pose))
-    point_2d = point_2d.squeeze()
+    X_C_W = np.linalg.inv(camera_pose)
+    point_2d = project_points_to_image_plane(transform_points(X_C_W, point_3d), intrinsics).squeeze()
     point_2d_int = np.rint(point_2d).astype(int)
     cv2.circle(image, tuple(point_2d_int), 10, color, thickness=2)
 
