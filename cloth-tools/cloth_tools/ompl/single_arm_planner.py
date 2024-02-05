@@ -33,7 +33,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         self,
         is_state_valid_fn: JointConfigurationCheckerType,
         inverse_kinematics_fn: Optional[InverseKinematicsType] = None,
-        max_planning_time: float = 10.0,
+        max_planning_time: float = 5.0,
         num_interpolated_states: Optional[int] = 500,
     ):
         """Instiatiate a single-arm motion planner that uses OMPL. This creates

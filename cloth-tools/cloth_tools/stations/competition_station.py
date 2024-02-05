@@ -79,7 +79,6 @@ class CompetitionStation(DualArmStation):
         robot_diagram_builder = RobotDiagramBuilder()
         meshcat = add_meshcat_to_builder(robot_diagram_builder)
 
-        # TODO use X_W_LCB and X_W_RCB to add the robots to the scene
         arm_indices, gripper_indices = add_dual_ur5e_and_table_to_builder(robot_diagram_builder, X_W_LCB, X_W_RCB)
         diagram, context = finish_build(robot_diagram_builder, meshcat)
 

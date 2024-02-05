@@ -55,7 +55,7 @@ def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0
 def hang_in_the_air_tcp_orientation(left: bool) -> RotationMatrixType:
     gripper_forward_direction = np.array([0, -1, 0]) if left else np.array([0, 1, 0])
     Z = gripper_forward_direction / np.linalg.norm(gripper_forward_direction)
-    X = np.array([0, 0, -1])
+    X = np.array([0, 0, 1]) if left else np.array([0, 0, -1])
     Y = np.cross(Z, X)
     return np.column_stack([X, Y, Z])
 
@@ -132,8 +132,8 @@ class GraspHighestController(Controller):
         dual_arm.right_manipulator.gripper.close().wait()
         dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose, linear_speed=0.2).wait()
 
-        # Hang the cloth in the air
-        execute_dual_arm_joint_path(dual_arm, self._path_hang, self.joint_speed)
+        # Hang the cloth in the air (do this a bit slower to limit the cloth swinging)
+        execute_dual_arm_joint_path(dual_arm, self._path_hang, self.joint_speed / 2.0)
 
         # dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
 
@@ -272,6 +272,9 @@ class GraspHighestController(Controller):
             self.plan()
             self.visualize_plan()
             self.execute_plan()
+
+        # Close cv2 window to reduce clutter
+        cv2.destroyWindow(self.__class__.__name__)
 
         logger.info(f"{self.__class__.__name__} finished.")
 
