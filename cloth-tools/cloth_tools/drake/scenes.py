@@ -2,10 +2,24 @@ from typing import Tuple
 
 import airo_models
 import numpy as np
+from airo_typing import HomogeneousMatrixType
 from cloth_tools.urdf.robotiq import create_static_robotiq_2f_85_urdf
 from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.multibody.tree import ModelInstanceIndex
 from pydrake.planning import RobotDiagramBuilder
+
+# Some fixed transforms and default poses (e.g. for when you don't have access to the real robot)
+
+# X_CB_B is the 180 rotation between ROS URDF base and the UR control box base
+X_CB_B = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0])
+
+ARM_Y_DEFAULT = 0.45
+
+# The default pose of the left robot base when using the ROS URDFs
+X_W_L_DEFAULT = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, ARM_Y_DEFAULT, 0])
+
+# The default pose of the right robot base when using the ROS URDFs
+X_W_R_DEFAULT = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, -ARM_Y_DEFAULT, 0])
 
 
 def add_ur5e_and_table_to_builder(
@@ -45,6 +59,8 @@ def add_ur5e_and_table_to_builder(
 
 def add_dual_ur5e_and_table_to_builder(
     robot_diagram_builder: RobotDiagramBuilder,
+    X_W_LCB: HomogeneousMatrixType | None = None,
+    X_W_RCB: HomogeneousMatrixType | None = None,
 ) -> Tuple[Tuple[ModelInstanceIndex, ModelInstanceIndex], Tuple[ModelInstanceIndex, ModelInstanceIndex]]:
     plant = robot_diagram_builder.plant()
     parser = robot_diagram_builder.parser()
@@ -84,9 +100,13 @@ def add_dual_ur5e_and_table_to_builder(
     wall_left_frame = plant.GetFrameByName("base_link", wall_left_index)
     wall_right_frame = plant.GetFrameByName("base_link", wall_right_index)
 
-    arm_y = 0.45
-    arm_left_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, arm_y, 0])
-    arm_right_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, -arm_y, 0])
+    X_W_L = X_W_L_DEFAULT if X_W_LCB is None else RigidTransform(X_W_LCB @ X_CB_B.GetAsMatrix4())
+    X_W_R = X_W_R_DEFAULT if X_W_RCB is None else RigidTransform(X_W_RCB @ X_CB_B.GetAsMatrix4())
+
+    arm_left_transform = X_W_L
+    arm_right_transform = X_W_R
+    arm_y = arm_left_transform.translation()[1]
+
     robotiq_ur_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
     table_transform = RigidTransform(p=[0, 0, -table_thickness / 2])
     wall_back_transform = RigidTransform(p=[0.9 + wall_thickness / 2, 0, 0])

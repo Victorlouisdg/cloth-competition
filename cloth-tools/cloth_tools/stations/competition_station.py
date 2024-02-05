@@ -1,3 +1,4 @@
+from functools import partial
 from typing import List
 
 import numpy as np
@@ -8,36 +9,23 @@ from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
 from cloth_tools.drake.scenes import add_dual_ur5e_and_table_to_builder
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
 from cloth_tools.planning.interfaces import DualArmMotionPlanner
+from cloth_tools.stations.coordinate_frames import create_egocentric_world_frame
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from loguru import logger
-from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
 from ur_analytic_ik import ur5e
 
-# TODO make these things not hardcoded, but maybe load from extrinsics?
-# Should be consistent with the Drake plant used for collision checking
+# Hardcoded for now
 tcp_transform = np.identity(4)
 tcp_transform[2, 3] = 0.175
 
-# LCB stands for "What the left control box considers to be the coordinate frame"
-y_distance = 0.45
-X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
-X_W_R = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, -y_distance, 0]).GetAsMatrix4()
-X_CB_B = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]).GetAsMatrix4()
-X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
-X_RCB_W = X_CB_B @ np.linalg.inv(X_W_R)
 
-
-def left_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
+def inverse_kinematics_in_world_fn(
+    tcp_pose: HomogeneousMatrixType, X_W_CB: HomogeneousMatrixType
+) -> List[JointConfigurationType]:
     X_W_TCP = tcp_pose
-    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_LCB_W @ X_W_TCP, tcp_transform)
-    solutions = [solution.squeeze() for solution in solutions_1x6]
-    return solutions
-
-
-def right_inverse_kinematics_fn(tcp_pose: HomogeneousMatrixType) -> List[JointConfigurationType]:
-    X_W_TCP = tcp_pose
-    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_RCB_W @ X_W_TCP, tcp_transform)
+    X_CB_W = np.linalg.inv(X_W_CB)
+    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_CB_W @ X_W_TCP, tcp_transform)
     solutions = [solution.squeeze() for solution in solutions_1x6]
     return solutions
 
@@ -55,13 +43,12 @@ class CompetitionStation(DualArmStation):
         camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
         camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
 
-        X_LCB_C = camera_pose_in_left  # Note: we could average between the extrinsics of the left and right camera
-        X_W_C = np.linalg.inv(X_LCB_W) @ X_LCB_C
-        camera_pose = X_W_C  # this must be consistent with the setup_dual_arm_ur5e call below
+        X_W_C, X_W_LCB, X_W_RCB = create_egocentric_world_frame(camera_pose_in_left, camera_pose_in_right)
 
-        # Setting up the robots and grippers
-        X_W_LCB = np.linalg.inv(X_LCB_W)
-        X_W_RCB = np.linalg.inv(X_RCB_W)
+        camera_pose = X_W_C  # this must be consistent with the setup_dual_arm_ur5e call below
+        self.left_arm_pose = X_W_LCB
+        self.right_arm_pose = X_W_RCB
+
         dual_arm = setup_dual_arm_ur5e_in_world(X_W_LCB, X_W_RCB)
         super().__init__(dual_arm, camera, camera_pose)
 
@@ -70,7 +57,7 @@ class CompetitionStation(DualArmStation):
         self.home_joints_right = np.deg2rad([-180, -45, -95, -130, 90, 90])
 
         # Planner for the two arms without obstacles (only the table)
-        self.planner: DualArmMotionPlanner = self._setup_planner()
+        self.planner: DualArmMotionPlanner = self._setup_planner(X_W_LCB, X_W_RCB)
 
         # This is purely for visualization, but read the robot joints and publish them to meshcat
         diagram = self._diagram
@@ -87,11 +74,13 @@ class CompetitionStation(DualArmStation):
 
         logger.info("CompetitionStation initialized.")
 
-    def _setup_planner(self) -> DualArmOmplPlanner:
+    def _setup_planner(self, X_W_LCB, X_W_RCB) -> DualArmOmplPlanner:
         # Creating the default scene
         robot_diagram_builder = RobotDiagramBuilder()
         meshcat = add_meshcat_to_builder(robot_diagram_builder)
-        arm_indices, gripper_indices = add_dual_ur5e_and_table_to_builder(robot_diagram_builder)
+
+        # TODO use X_W_LCB and X_W_RCB to add the robots to the scene
+        arm_indices, gripper_indices = add_dual_ur5e_and_table_to_builder(robot_diagram_builder, X_W_LCB, X_W_RCB)
         diagram, context = finish_build(robot_diagram_builder, meshcat)
 
         collision_checker = SceneGraphCollisionChecker(
@@ -103,6 +92,9 @@ class CompetitionStation(DualArmStation):
         )
 
         is_state_valid_fn = collision_checker.CheckConfigCollisionFree
+
+        left_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
+        right_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
 
         # expose these things for visualization
         self._diagram = diagram
@@ -131,9 +123,8 @@ if __name__ == "__main__":
     dual_arm = station.dual_arm
 
     X_W_C = station.camera_pose
-    X_C_W = np.linalg.inv(X_W_C)
-    X_C_LCB = X_C_W @ np.linalg.inv(X_LCB_W)
-    X_C_RCB = X_C_W @ np.linalg.inv(X_RCB_W)
+    X_W_LCB = station.left_arm_pose
+    X_W_RCB = station.right_arm_pose
 
     window_name = "Competiton station"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -145,15 +136,12 @@ if __name__ == "__main__":
         X_CB_LTCP = dual_arm.left_manipulator.get_tcp_pose()
         X_CB_RTCP = dual_arm.right_manipulator.get_tcp_pose()
 
-        X_C_LTCP = X_C_LCB @ X_CB_LTCP
-        X_C_RTCP = X_C_RCB @ X_CB_RTCP
-
-        # visualize X_C_W, X_C_LCB. X_C_RCB, X_C_LTCP, X_C_RTCP
-        draw_pose(image_bgr, X_C_W, camera.intrinsics_matrix(), np.identity(4), 0.25)
-        draw_pose(image_bgr, X_C_LCB, camera.intrinsics_matrix(), np.identity(4))
-        draw_pose(image_bgr, X_C_RCB, camera.intrinsics_matrix(), np.identity(4))
-        draw_pose(image_bgr, X_C_LTCP, camera.intrinsics_matrix(), np.identity(4), 0.05)
-        draw_pose(image_bgr, X_C_RTCP, camera.intrinsics_matrix(), np.identity(4), 0.05)
+        intrinsics = camera.intrinsics_matrix()
+        draw_pose(image_bgr, np.identity(4), intrinsics, X_W_C, 0.25)
+        draw_pose(image_bgr, X_W_LCB, intrinsics, X_W_C)
+        draw_pose(image_bgr, X_W_RCB, intrinsics, X_W_C)
+        draw_pose(image_bgr, X_W_LCB @ X_CB_LTCP, intrinsics, X_W_C, 0.05)
+        draw_pose(image_bgr, X_W_RCB @ X_CB_RTCP, intrinsics, X_W_C, 0.05)
 
         cv2.imshow(window_name, image_bgr)
         key = cv2.waitKey(1)

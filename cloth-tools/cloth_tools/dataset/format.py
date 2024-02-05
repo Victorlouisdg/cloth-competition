@@ -26,7 +26,9 @@ class CompetitionInputSample:
     point_cloud: PointCloud
     depth_image: NumpyIntImageType | None  # Optional depth image for visualization
     confidence_map: NumpyDepthMapType | None  # Confidence of the depth map as returned by the ZED SDK
-    camera_pose: CameraExtrinsicMatrixType
+    camera_pose_in_world: CameraExtrinsicMatrixType
+    left_arm_pose_in_world: CameraExtrinsicMatrixType
+    right_arm_pose_in_world: CameraExtrinsicMatrixType
     camera_intrinsics: CameraIntrinsicsMatrixType
     camera_resolution: CameraResolutionType
 
@@ -61,11 +63,17 @@ def save_competition_input_sample(sample: CompetitionInputSample, dataset_dir: s
             indent=4,
         )
 
-    with open(filepaths["camera_pose"], "w") as f:
+    with open(filepaths["camera_pose_in_world"], "w") as f:
+        json.dump(Pose.from_homogeneous_matrix(sample.camera_pose_in_world).model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["left_arm_pose_in_world"], "w") as f:
         json.dump(
-            Pose.from_homogeneous_matrix(sample.camera_pose).model_dump(exclude_none=True),
-            f,
-            indent=4,
+            Pose.from_homogeneous_matrix(sample.left_arm_pose_in_world).model_dump(exclude_none=True), f, indent=4
+        )
+
+    with open(filepaths["right_arm_pose_in_world"], "w") as f:
+        json.dump(
+            Pose.from_homogeneous_matrix(sample.right_arm_pose_in_world).model_dump(exclude_none=True), f, indent=4
         )
 
     pcd = point_cloud_to_open3d(sample.point_cloud)
@@ -92,8 +100,14 @@ def load_competition_input_sample(dataset_dir: str, sample_index: int) -> Compet
     depth_image = cv2.imread(filepaths["depth_image"])
     confidence_map = cv2.imread(filepaths["confidence_map"], cv2.IMREAD_ANYDEPTH)
 
-    with open(filepaths["camera_pose"], "r") as f:
-        camera_pose = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+    with open(filepaths["camera_pose_in_world"], "r") as f:
+        camera_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["left_arm_pose_in_world"], "r") as f:
+        left_arm_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["right_arm_pose_in_world"], "r") as f:
+        right_arm_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
 
     with open(filepaths["camera_intrinsics"], "r") as f:
         intrinsics_model = CameraIntrinsics.model_validate_json(f.read())
@@ -117,7 +131,9 @@ def load_competition_input_sample(dataset_dir: str, sample_index: int) -> Compet
         point_cloud=point_cloud,
         depth_image=depth_image,
         confidence_map=confidence_map,
-        camera_pose=camera_pose,
+        camera_pose_in_world=camera_pose_in_world,
+        left_arm_pose_in_world=left_arm_pose_in_world,
+        right_arm_pose_in_world=right_arm_pose_in_world,
         camera_intrinsics=camera_instrinsics,
         camera_resolution=camera_resolution,
     )
@@ -143,7 +159,9 @@ def competition_input_sample_filenames(sample_index: int) -> dict[str, str]:
         "point_cloud": f"point_cloud_{sample_index_padded}.ply",
         "depth_image": f"depth_image_{sample_index_padded}.png",
         "confidence_map": f"confidence_map_{sample_index_padded}.tiff",
-        "camera_pose": "camera_pose.json",
+        "camera_pose_in_world": "camera_pose_in_world.json",
+        "left_arm_pose_in_world": "left_arm_pose_in_world.json",
+        "right_arm_pose_in_world": "right_arm_pose_in_world.json",
         "camera_intrinsics": "camera_intrinsics.json",
         "camera_resolution": "camera_resolution.json",
     }

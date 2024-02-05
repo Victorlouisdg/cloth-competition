@@ -2,26 +2,30 @@ import click
 import cv2
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_camera_toolkit.interfaces import StereoRGBDCamera
-from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_typing import CameraExtrinsicMatrixType
-from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR
 from cloth_tools.config import load_camera_pose_in_left_and_right
 from cloth_tools.dataset.bookkeeping import ensure_dataset_dir, find_highest_suffix
 from cloth_tools.dataset.format import CompetitionInputSample, save_competition_input_sample
-from cloth_tools.point_clouds.operations import filter_and_crop_point_cloud
+from cloth_tools.stations.coordinate_frames import create_egocentric_world_frame
 from loguru import logger
 
 
 def collect_competition_input_samples(
-    camera: Zed2i, camera_pose: CameraExtrinsicMatrixType, dataset_dir: str | None = None
+    camera: Zed2i,
+    camera_pose_in_world: CameraExtrinsicMatrixType,
+    camera_pose_in_left: CameraExtrinsicMatrixType,
+    camera_pose_in_right: CameraExtrinsicMatrixType,
+    dataset_dir: str | None = None,
 ) -> str:
     """Collects samples of the input RGB-D data without moving the robots.
     This also means that no grasp labels are collected.
 
     Args:
         camera: The camera. (Currently must be a ZED2i camera for the confidence map.)
-        camera_pose: The camera pose in the world frame.
+        camera_pose: The camera pose in the world frame, X_W_C.
+        left_arm_pose: The pose of the left robot arm X_W_LCB.
+        right_arm_pose: The pose of the right robot arm X_W_RCB.
         dataset_dir: The directory the samples will be added to.
 
     Returns:
@@ -41,12 +45,16 @@ def collect_competition_input_samples(
         depth_image = camera._retrieve_depth_image()
         confidence_map = camera._retrieve_confidence_map()
 
-        # Retrieve, transform, filter and crop the point cloud
         point_cloud_in_camera = camera._retrieve_colored_point_cloud()
-        pcd_in_camera = point_cloud_to_open3d(point_cloud_in_camera)
-        pcd = pcd_in_camera.transform(camera_pose)  # transform to world frame (= base frame of left robot)
-        point_cloud = open3d_to_point_cloud(pcd)
-        point_cloud_cropped = filter_and_crop_point_cloud(point_cloud, confidence_map, BBOX_CLOTH_IN_THE_AIR)
+        # pcd_in_camera = point_cloud_to_open3d(point_cloud_in_camera)
+        # pcd = pcd_in_camera.transform(camera_pose)  # transform to world frame (= base frame of left robot)
+        # point_cloud = open3d_to_point_cloud(pcd)
+        # point_cloud_cropped = filter_and_crop_point_cloud(point_cloud, confidence_map, BBOX_CLOTH_IN_THE_AIR)
+
+        # TODO also save right intrinsics as they might be slightly different
+        # TODO save pose of right_camera_frame_in_left_camera_frame?
+        # TODO decided whether to save the point cloud in the camera frame (or in the world frame)
+        # TODO save bboxes?
 
         image_left_bgr = ImageConverter.from_numpy_int_format(image_left).image_in_opencv_format
 
@@ -59,10 +67,12 @@ def collect_competition_input_samples(
                 image_left,
                 image_right,
                 depth_map,
-                point_cloud_cropped,
+                point_cloud_in_camera,
                 depth_image,
                 confidence_map,
-                camera_pose,
+                camera_pose_in_world,
+                camera_pose_in_left,
+                camera_pose_in_right,
                 camera.intrinsics_matrix(),
                 camera.resolution,
             )
@@ -85,9 +95,11 @@ def collect_competition_input_samples_with_zed2i(dataset_dir: str | None = None)
         The path to the dataset directory.
     """
     camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
-    camera_pose, _ = load_camera_pose_in_left_and_right()
+    camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
 
-    dataset_dir = collect_competition_input_samples(camera, camera_pose, dataset_dir)
+    X_W_C, X_W_LCB, X_W_RCB = create_egocentric_world_frame(camera_pose_in_left, camera_pose_in_right)
+
+    dataset_dir = collect_competition_input_samples(camera, X_W_C, X_W_LCB, X_W_RCB, dataset_dir)
     return dataset_dir
 
 

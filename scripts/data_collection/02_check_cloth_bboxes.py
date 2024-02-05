@@ -3,6 +3,7 @@ Detect live whether there is cloth in the air/on the table or none at all.
 Works by counting the amount of points in two 3D bounding boxes.
 Also shows the highest point in the table bbox and the lowest point in the air bbox.
 """
+
 from typing import Dict, Tuple
 
 import cv2
@@ -20,9 +21,9 @@ from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, BBOX_CLOTH_ON_TABL
 from cloth_tools.config import load_camera_pose_in_left_and_right
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point, lowest_point
+from cloth_tools.stations.coordinate_frames import create_egocentric_world_frame
 from cloth_tools.visualization.rerun import rr_log_camera
 from loguru import logger
-from pydrake.math import RigidTransform, RollPitchYaw
 
 
 def log_and_draw_point(
@@ -82,14 +83,8 @@ if __name__ == "__main__":
 
     window_name = "Cloth BBoxes"
 
-    # X_CB_B is the 180 rotation between ROS URDF base en control box base
-    y_distance = 0.45
-    X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
-    X_CB_B = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]).GetAsMatrix4()
-    X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
-    X_LCB_C, _ = load_camera_pose_in_left_and_right()
-    X_C_W = np.linalg.inv(X_LCB_C) @ X_LCB_W
-    X_W_C = np.linalg.inv(X_C_W)
+    X_LCB_C, X_RCB_C = load_camera_pose_in_left_and_right()
+    X_W_C, _, _ = create_egocentric_world_frame(X_LCB_C, X_RCB_C)
 
     bbox_table = BBOX_CLOTH_ON_TABLE
     bbox_air = BBOX_CLOTH_IN_THE_AIR
@@ -103,6 +98,8 @@ if __name__ == "__main__":
     rr.init(window_name, spawn=True)
     rr_log_camera(camera, X_W_C)
     rr_log_bboxes(bboxes, bbox_colors)
+
+    rr.log("world/identity_pose", rr.Transform3D(scale=0.5))
 
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
