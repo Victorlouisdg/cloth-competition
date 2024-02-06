@@ -51,10 +51,10 @@ class DualArmMotionPlanner(abc.ABC):
     @abc.abstractmethod
     def plan_to_joint_configuration(
         self,
-        left_start_configuration: JointConfigurationType,
-        right_start_configuration: JointConfigurationType,
-        left_goal_configuration: Union[JointConfigurationType, None],
-        right_goal_configuration: Union[JointConfigurationType, None],
+        start_configuration_left: JointConfigurationType,
+        start_configuration_right: JointConfigurationType,
+        goal_configuration_left: Union[JointConfigurationType, None],
+        goal_configuration_right: Union[JointConfigurationType, None],
     ) -> Union[List[Tuple[JointConfigurationType, JointConfigurationType]], None]:
         """Plan a path from a start configurations to a goal configurations.
 
@@ -66,10 +66,10 @@ class DualArmMotionPlanner(abc.ABC):
         that makes avoiding collisions easier.
 
         Args:
-            left_start_configuration: The start configuration of the left arm.
-            right_start_configuration: The start configuration of the right arm.
-            left_goal_configuration: The goal configuration of the left arm.
-            right_goal_configuration: The goal configuration of the right arm.
+            start_configuration_left: The start configuration of the left arm.
+            start_configuration_right: The start configuration of the right arm.
+            goal_configuration_left: The goal configuration of the left arm.
+            goal_configuration_right: The goal configuration of the right arm.
 
         Returns:
             A discretized path from the start configuration to the goal
@@ -82,10 +82,10 @@ class DualArmMotionPlanner(abc.ABC):
     @abc.abstractmethod
     def plan_to_tcp_pose(
         self,
-        left_start_configuration: JointConfigurationType,
-        right_start_configuration: JointConfigurationType,
-        left_tcp_pose_in_base: Union[HomogeneousMatrixType, None],
-        right_tcp_pose_in_base: Union[HomogeneousMatrixType, None],
+        start_configuration_left: JointConfigurationType,
+        start_configuration_right: JointConfigurationType,
+        tcp_pose_left_in_base: Union[HomogeneousMatrixType, None],
+        tcp_pose_right_in_base: Union[HomogeneousMatrixType, None],
     ) -> List[JointConfigurationType]:
         """TODO"""
         raise NotImplementedError

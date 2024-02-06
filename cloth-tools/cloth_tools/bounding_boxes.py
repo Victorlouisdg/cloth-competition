@@ -2,7 +2,7 @@ from typing import Tuple
 
 from airo_typing import BoundingBox3DType
 
-BBOX_CLOTH_ON_TABLE = (-0.55, -0.3, 0.02), (0.55, 0.3, 0.2)
+BBOX_CLOTH_ON_TABLE = (-0.55, -0.25, 0.02), (0.55, 0.25, 0.2)
 BBOX_CLOTH_IN_THE_AIR = (-0.2, -0.2, 0.2), (0.2, 0.2, 0.8)
 
 

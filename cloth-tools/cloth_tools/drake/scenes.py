@@ -29,6 +29,7 @@ def add_ur5e_and_table_to_builder(
 ) -> Tuple[ModelInstanceIndex, ModelInstanceIndex]:
     plant = robot_diagram_builder.plant()
     parser = robot_diagram_builder.parser()
+    parser.SetAutoRenaming(True)
 
     # Load URDF files
     ur5e_urdf_path = airo_models.get_urdf_path("ur5e")
@@ -37,9 +38,9 @@ def add_ur5e_and_table_to_builder(
     table_thickness = 0.2
     table_urdf_path = airo_models.box_urdf_path((2.0, 2.4, table_thickness), "table")
 
-    arm_index = parser.AddModelFromFile(ur5e_urdf_path)
-    gripper_index = parser.AddModelFromFile(robotiq_urdf_path)
-    table_index = parser.AddModelFromFile(table_urdf_path)
+    arm_index = parser.AddModels(ur5e_urdf_path)[0]
+    gripper_index = parser.AddModels(robotiq_urdf_path)[0]
+    table_index = parser.AddModels(table_urdf_path)[0]
 
     # Weld some frames together
     world_frame = plant.world_frame()
@@ -65,6 +66,7 @@ def add_dual_ur5e_and_table_to_builder(
 ) -> Tuple[Tuple[ModelInstanceIndex, ModelInstanceIndex], Tuple[ModelInstanceIndex, ModelInstanceIndex]]:
     plant = robot_diagram_builder.plant()
     parser = robot_diagram_builder.parser()
+    parser.SetAutoRenaming(True)
 
     # Load URDF files
     ur5e_urdf_path = airo_models.get_urdf_path("ur5e")
@@ -77,15 +79,15 @@ def add_dual_ur5e_and_table_to_builder(
     wall_left_urdf_path = airo_models.box_urdf_path((2.0, wall_thickness, 2.0), "wall_left")
     wall_right_urdf_path = airo_models.box_urdf_path((2.0, wall_thickness, 2.0), "wall_right")
 
-    arm_left_index = parser.AddModelFromFile(ur5e_urdf_path, model_name="arm_left")
-    arm_right_index = parser.AddModelFromFile(ur5e_urdf_path, model_name="arm_right")
-    gripper_left_index = parser.AddModelFromFile(robotiq_urdf_path, "gripper_left")
-    gripper_right_index = parser.AddModelFromFile(robotiq_urdf_path, model_name="gripper_right")
+    arm_left_index = parser.AddModels(ur5e_urdf_path)[0]
+    arm_right_index = parser.AddModels(ur5e_urdf_path)[0]
+    gripper_left_index = parser.AddModels(robotiq_urdf_path)[0]
+    gripper_right_index = parser.AddModels(robotiq_urdf_path)[0]
 
-    table_index = parser.AddModelFromFile(table_urdf_path)
-    wall_back_index = parser.AddModelFromFile(wall_back_urdf_path)
-    wall_left_index = parser.AddModelFromFile(wall_left_urdf_path)
-    wall_right_index = parser.AddModelFromFile(wall_right_urdf_path)
+    table_index = parser.AddModels(table_urdf_path)[0]
+    wall_back_index = parser.AddModels(wall_back_urdf_path)[0]
+    wall_left_index = parser.AddModels(wall_left_urdf_path)[0]
+    wall_right_index = parser.AddModels(wall_right_urdf_path)[0]
 
     # Weld some frames together
     world_frame = plant.world_frame()

@@ -158,7 +158,7 @@ class GraspLowestController(Controller):
         # Add the cloth hull to the scene
         plant = robot_diagram_builder.plant()
         parser = robot_diagram_builder.parser()
-        hull_index = parser.AddModelFromFile(hull_urdf_path, "cloth_hull")
+        hull_index = parser.AddModels(hull_urdf_path)[0]
         world_frame = plant.world_frame()
         hull_frame = plant.GetFrameByName("base_link", hull_index)
         plant.WeldFrames(world_frame, hull_frame)
@@ -175,8 +175,8 @@ class GraspLowestController(Controller):
 
         is_state_valid_fn = collision_checker.CheckConfigCollisionFree
 
-        left_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
-        right_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
+        inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
+        inverse_kinematics_right_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
 
         # expose these things for visualization
         self._diagram = diagram
@@ -188,13 +188,17 @@ class GraspLowestController(Controller):
 
         planner = DualArmOmplPlanner(
             is_state_valid_fn,
-            left_inverse_kinematics_fn,
-            right_inverse_kinematics_fn,
+            inverse_kinematics_left_fn,
+            inverse_kinematics_right_fn,
+            self.station.joint_bounds_left,
+            self.station.joint_bounds_right,
         )
 
         return planner
 
     def plan(self) -> None:
+        logger.info(f"{self.__class__.__name__}: Creating new plan.")
+
         camera = self.station.camera
         camera_pose = self.station.camera_pose
 
@@ -217,6 +221,8 @@ class GraspLowestController(Controller):
         self._lowest_point = lowest_point_
         self._grasp_pose = grasp_pose
 
+        logger.info(f"Found lowest point in bbox at: {lowest_point_}")
+
         pregrasp_pose = move_pose_backwards(grasp_pose, 0.15)
         self._pregrasp_pose = pregrasp_pose
 
@@ -233,8 +239,8 @@ class GraspLowestController(Controller):
         # plant.SetPositions(plant_context, self._arm_indices[1], start_joints_right.squeeze())
 
         # X_W_LCB = self.station.left_arm_pose
-        # left_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
-        # ik_solutions = left_inverse_kinematics_fn(pregrasp_pose)
+        # inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
+        # ik_solutions = inverse_kinematics_left_fn(pregrasp_pose)
         # publish_ik_solutions(ik_solutions, 2.0, self._meshcat, self._diagram, self._context, self._arm_indices[0])
         # input("Press Enter to continue...")
 

@@ -102,6 +102,7 @@ class GraspHighestController(Controller):
         self._highest_point: Optional[Vector3DType] = None
         self._path_pregrasp: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
         self._path_hang: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
+        self._hang_tcp_pose: Optional[HomogeneousMatrixType] = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -138,6 +139,8 @@ class GraspHighestController(Controller):
         # dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
 
     def plan(self) -> None:
+        logger.info(f"{self.__class__.__name__}: Creating new plan.")
+
         camera = self.station.camera
         camera_pose = self.station.camera_pose
 
@@ -158,22 +161,30 @@ class GraspHighestController(Controller):
         highest_point_ = highest_point(point_cloud_cropped.points)
         grasp_pose = highest_point_grasp_pose(highest_point_)
 
+        logger.info(f"{self.__class__.__name__}: Found highest point in bbox at {highest_point_}.")
+
         self._highest_point = highest_point_
         self._grasp_pose = grasp_pose
 
         pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
         self._pregrasp_pose = pregrasp_pose
 
+        logger.info(f"{self.__class__.__name__}: Planning from start joints to pregrasp pose.")
+
         planner = self.station.planner
         dual_arm = self.station.dual_arm
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
-        path = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
-        self._path_pregrasp = path
+        path_pregrasp = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
+        self._path_pregrasp = path_pregrasp
 
-        # plan an additional path from the pregrasp joints to the hang joints
+        if path_pregrasp is None:
+            return
+
+        logger.info(f"{self.__class__.__name__}: Planning from pregrasp pose to hang pose.")
+
         # we operate under the assumption that the after the grasp the robot is back at the pregrasp pose with the same joint config
-        pregrasp_joints_right = path[-1][1]
+        pregrasp_joints_right = path_pregrasp[-1][1]
 
         # Warning: only implemented for right arm at the moment, when implementing for left arm, change args in plan_()
         self._hang_tcp_pose = hang_in_the_air_tcp_pose(left=False)

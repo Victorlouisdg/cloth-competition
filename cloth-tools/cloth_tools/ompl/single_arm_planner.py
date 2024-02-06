@@ -1,13 +1,8 @@
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Tuple
 
 import numpy as np
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
-from cloth_tools.ompl.state_space import (
-    function_numpy_to_ompl,
-    numpy_to_ompl_state,
-    ompl_path_to_numpy,
-    revolute_joints_state_space,
-)
+from cloth_tools.ompl.state_space import function_numpy_to_ompl, numpy_to_ompl_state, ompl_path_to_numpy
 from cloth_tools.planning.interfaces import SingleArmMotionPlanner
 from loguru import logger
 from ompl import base as ob
@@ -33,6 +28,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         self,
         is_state_valid_fn: JointConfigurationCheckerType,
         inverse_kinematics_fn: Optional[InverseKinematicsType] = None,
+        joint_bounds: Tuple[JointConfigurationType, JointConfigurationType] = None,
         max_planning_time: float = 5.0,
         num_interpolated_states: Optional[int] = 500,
     ):
@@ -48,13 +44,17 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         """
         self.is_state_valid_fn = is_state_valid_fn
         self.inverse_kinematics_fn = inverse_kinematics_fn
+        self.joint_bounds = joint_bounds
+
+        # Currently we only planning for 6 DoF arms
+        self.degrees_of_freedom: int = 6
+
+        if self.joint_bounds is None:
+            self.joint_bounds = (np.full(6, -2 * np.pi), np.full(6, 2 * np.pi))
 
         # Settings
         self.max_planning_time = max_planning_time
         self.num_interpolated_states = num_interpolated_states
-
-        # Currently we only planning for 6 DoF arms
-        self.degrees_of_freedom: int = 6
 
         self._simple_setup = self._create_simple_setup()
 
@@ -62,7 +62,15 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
 
     def _create_simple_setup(self):
         # Create state space and convert to OMPL compatible data types
-        space = revolute_joints_state_space(self.degrees_of_freedom)
+        joint_bounds = self.joint_bounds
+        space = ob.RealVectorStateSpace(self.degrees_of_freedom)
+        bounds = ob.RealVectorBounds(self.degrees_of_freedom)
+        joint_bounds_lower = joint_bounds[0]
+        joint_bounds_upper = joint_bounds[1]
+        for i in range(self.degrees_of_freedom):
+            bounds.setLow(i, joint_bounds_lower[i])
+            bounds.setHigh(i, joint_bounds_upper[i])
+        space.setBounds(bounds)
 
         is_state_valid_ompl = function_numpy_to_ompl(self.is_state_valid_fn, self.degrees_of_freedom)
 
@@ -122,8 +130,11 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         path_numpy = ompl_path_to_numpy(path, self.degrees_of_freedom)
         return path_numpy
 
-    def plan_to_tcp_pose(
-        self, start_configuration: JointConfigurationType, tcp_pose_in_base: HomogeneousMatrixType
+    def plan_to_tcp_pose(  # noqa: C901
+        self,
+        start_configuration: JointConfigurationType,
+        tcp_pose_in_base: HomogeneousMatrixType,
+        desirable_goal_configurations: Optional[List[JointConfigurationType]] = None,
     ) -> List[JointConfigurationType] | None:
         # TODO: add options for specifying a preferred IK solutions, e.g. min distance to a joint configuration
         # desirable_goal_joint_configurations = Optional[List[JointConfigurationType]]
@@ -140,12 +151,23 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         else:
             logger.info(f"IK returned {len(ik_solutions)} solutions.")
 
-        ik_solutions_valid = [s for s in ik_solutions if self.is_state_valid_fn(s)]
-        if len(ik_solutions_valid) == 0:
-            logger.info("All IK solutions are invalid, returning None.")
+        ik_solutions_within_bounds = []
+        for ik_solution in ik_solutions:
+            if np.all(ik_solution >= self.joint_bounds[0]) and np.all(ik_solution <= self.joint_bounds[1]):
+                ik_solutions_within_bounds.append(ik_solution)
+
+        if len(ik_solutions_within_bounds) == 0:
+            logger.info("No IK solutions are within the joint bounds, returning None.")
             return None
         else:
-            logger.info(f"Found {len(ik_solutions_valid)}/{len(ik_solutions)} valid solutions.")
+            logger.info(f"Found {len(ik_solutions_within_bounds)}/{len(ik_solutions)} solutions within joint bounds.")
+
+        ik_solutions_valid = [s for s in ik_solutions_within_bounds if self.is_state_valid_fn(s)]
+        if len(ik_solutions_valid) == 0:
+            logger.info("All IK solutions within bounds are invalid, returning None.")
+            return None
+        else:
+            logger.info(f"Found {len(ik_solutions_valid)}/{len(ik_solutions_within_bounds)} valid solutions.")
 
         # Try solving to each IK solution in joint space.
         paths = []
@@ -160,14 +182,38 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
             logger.info("No paths founds towards any IK solutions, returning None.")
             return None
 
-        logger.info(
-            f"Found {len(paths)} paths towards IK solutions, lengths: {[np.round(l, 2) for l in path_lengths]}."
-        )
+        path_distances = [np.linalg.norm(path[-1] - start_configuration) for path in paths]
 
-        # Pick the shortest path
-        shortest_path_idx = np.argmin(path_lengths)
+        path_desirablities = None
+        if desirable_goal_configurations is not None:
+            path_desirablities = []
+            for path in paths:
+                min_distance = np.inf
+                for desirable_goal in desirable_goal_configurations:
+                    distance = np.linalg.norm(path[-1] - desirable_goal)
+                    min_distance = min(min_distance, distance)
+                path_desirablities.append(min_distance)
 
-        logger.info(f"Length of solution (= shortest path): {path_lengths[shortest_path_idx]:.3f}")
+        lengths_str = f"{[np.round(l, 3) for l in path_lengths]}"
+        distances_str = f"{[np.round(d, 3) for d in path_distances]}"
+        logger.info(f"Found {len(paths)} paths towards IK solutions:")
+        logger.info(f"Path lengths: {lengths_str}")
+        logger.info(f"Path distances: {distances_str}")
 
-        shortest_path = paths[shortest_path_idx]
-        return shortest_path
+        if path_desirablities is not None:
+            desirabilities_str = f"{[np.round(d, 3) for d in path_desirablities]}"
+            logger.info(f"Path desirabilities: {desirabilities_str}")
+
+        use_desirability = path_desirablities is not None
+
+        if use_desirability:
+            idx = np.argmin(path_desirablities)
+            logger.info(
+                f"Length of chosen solution (= most desirable end): {path_lengths[idx]:.3f}, desirability: {path_desirablities[idx]:.3f}"
+            )
+        else:
+            idx = np.argmin(path_lengths)
+            logger.info(f"Length of chosen solution (= shortest path): {path_lengths[idx]:.3f}")
+
+        solution_path = paths[idx]
+        return solution_path

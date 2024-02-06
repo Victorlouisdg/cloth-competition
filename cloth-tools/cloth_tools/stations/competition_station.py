@@ -52,9 +52,15 @@ class CompetitionStation(DualArmStation):
         dual_arm = setup_dual_arm_ur5e_in_world(X_W_LCB, X_W_RCB)
         super().__init__(dual_arm, camera, camera_pose)
 
-        # Adding additional attributes
-        self.home_joints_left = np.deg2rad([180, -135, 95, -50, -90, -90])
-        self.home_joints_right = np.deg2rad([-180, -45, -95, -130, 90, 90])
+        # Setting some home joints
+        self.home_joints_left = np.deg2rad([180, -120, 60, -30, -90, -90])
+        self.home_joints_right = np.deg2rad([-180, -60, -60, -150, 90, 90])
+
+        joint_bounds_lower = np.deg2rad([-360, -180, -160, -360, -360, -360])
+        joint_bounds_upper = np.deg2rad([360, 0, 160, 360, 360, 360])
+        joint_bounds = (joint_bounds_lower, joint_bounds_upper)
+        self.joint_bounds_left = joint_bounds
+        self.joint_bounds_right = joint_bounds
 
         # Planner for the two arms without obstacles (only the table)
         self.planner: DualArmMotionPlanner = self._setup_planner(X_W_LCB, X_W_RCB)
@@ -92,8 +98,8 @@ class CompetitionStation(DualArmStation):
 
         is_state_valid_fn = collision_checker.CheckConfigCollisionFree
 
-        left_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
-        right_inverse_kinematics_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
+        inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
+        inverse_kinematics_right_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
 
         # expose these things for visualization
         self._diagram = diagram
@@ -105,8 +111,10 @@ class CompetitionStation(DualArmStation):
 
         planner = DualArmOmplPlanner(
             is_state_valid_fn,
-            left_inverse_kinematics_fn,
-            right_inverse_kinematics_fn,
+            inverse_kinematics_left_fn,
+            inverse_kinematics_right_fn,
+            self.joint_bounds_left,
+            self.joint_bounds_right,
         )
         return planner
 

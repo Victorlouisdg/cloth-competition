@@ -12,6 +12,7 @@ def add_meshcat_to_builder(robot_diagram_builder: RobotDiagramBuilder) -> Meshca
 
     # Adding Meshcat must also be done before finalizing
     meshcat = Meshcat()
+    meshcat.SetCameraPose([-2.0, 0, 1.0], [0, 0, 0])
     MeshcatVisualizer.AddToBuilder(builder, scene_graph, meshcat)
 
     # Add visualizer for proximity/collision geometry
