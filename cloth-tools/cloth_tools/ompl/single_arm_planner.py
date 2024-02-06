@@ -125,6 +125,10 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
     def plan_to_tcp_pose(
         self, start_configuration: JointConfigurationType, tcp_pose_in_base: HomogeneousMatrixType
     ) -> List[JointConfigurationType] | None:
+        # TODO: add options for specifying a preferred IK solutions, e.g. min distance to a joint configuration
+        # desirable_goal_joint_configurations = Optional[List[JointConfigurationType]]
+        # Without this we plan to all joint configs and pick the shortest path
+        # With it, we try the closest IK solution first and if it fails we try the next closest etc.
         if self.inverse_kinematics_fn is None:
             logger.warning("Planning to TCP pose attempted but inverse_kinematics_fn was provided, returing None.")
             return None

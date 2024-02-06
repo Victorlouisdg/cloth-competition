@@ -21,6 +21,8 @@ X_W_L_DEFAULT = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, ARM_Y_
 # The default pose of the right robot base when using the ROS URDFs
 X_W_R_DEFAULT = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, -ARM_Y_DEFAULT, 0])
 
+X_URTOOL0_ROBOTIQ = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
+
 
 def add_ur5e_and_table_to_builder(
     robot_diagram_builder: RobotDiagramBuilder,
@@ -47,11 +49,10 @@ def add_ur5e_and_table_to_builder(
     gripper_frame = plant.GetFrameByName("base_link", gripper_index)
 
     arm_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0])
-    robotiq_ur_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
     table_transform = RigidTransform(p=[0, 0, -table_thickness / 2])
 
     plant.WeldFrames(world_frame, arm_frame, arm_transform)
-    plant.WeldFrames(arm_tool_frame, gripper_frame, robotiq_ur_transform)
+    plant.WeldFrames(arm_tool_frame, gripper_frame, X_URTOOL0_ROBOTIQ)
     plant.WeldFrames(world_frame, table_frame, table_transform)
 
     return arm_index, gripper_index
@@ -107,7 +108,6 @@ def add_dual_ur5e_and_table_to_builder(
     arm_right_transform = X_W_R
     arm_y = arm_left_transform.translation()[1]
 
-    robotiq_ur_transform = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, 0, 0])
     table_transform = RigidTransform(p=[0, 0, -table_thickness / 2])
     wall_back_transform = RigidTransform(p=[0.9 + wall_thickness / 2, 0, 0])
     wall_left_transform = RigidTransform(p=[0, arm_y + 0.7 + wall_thickness / 2, 0])
@@ -115,8 +115,8 @@ def add_dual_ur5e_and_table_to_builder(
 
     plant.WeldFrames(world_frame, arm_left_frame, arm_left_transform)
     plant.WeldFrames(world_frame, arm_right_frame, arm_right_transform)
-    plant.WeldFrames(arm_left_tool_frame, gripper_left_frame, robotiq_ur_transform)
-    plant.WeldFrames(arm_right_tool_frame, gripper_right_frame, robotiq_ur_transform)
+    plant.WeldFrames(arm_left_tool_frame, gripper_left_frame, X_URTOOL0_ROBOTIQ)
+    plant.WeldFrames(arm_right_tool_frame, gripper_right_frame, X_URTOOL0_ROBOTIQ)
     plant.WeldFrames(world_frame, table_frame, table_transform)
     plant.WeldFrames(world_frame, wall_back_frame, wall_back_transform)
     plant.WeldFrames(world_frame, wall_left_frame, wall_left_transform)
