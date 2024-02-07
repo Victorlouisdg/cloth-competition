@@ -121,9 +121,10 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         path_simplifier = og.PathSimplifier(simple_setup.getSpaceInformation())
         path = simple_setup.getSolutionPath()
         path_simplifier.smoothBSpline(path)
-        simple_setup.simplifySolution()
-        if self.num_interpolated_states is not None:
-            path.interpolate(self.num_interpolated_states)
+        # Don't simplify again, seems to make joint velocity jumps worse
+        # simple_setup.simplifySolution()
+        # if self.num_interpolated_states is not None:
+        #     path.interpolate(self.num_interpolated_states)
 
         self._path_length = path.length()
 

@@ -2,6 +2,39 @@ from typing import List, Tuple
 
 import numpy as np
 from airo_robots.manipulators.bimanual_position_manipulator import DualArmPositionManipulator
+from airo_typing import JointConfigurationType
+from pydrake.multibody.optimization import CalcGridPointsOptions, Toppra
+from pydrake.multibody.plant import MultibodyPlant
+from pydrake.trajectories import PiecewisePolynomial, Trajectory
+
+
+def time_parametrize_toppra(
+    dual_arm_joint_path: List[Tuple[JointConfigurationType, JointConfigurationType]],
+    plant: MultibodyPlant,
+    joint_speed_limit: float = 1.0,
+    joint_acceleration_limit: float = 1.2,
+) -> Tuple[Trajectory, Trajectory]:
+    """Time-parametrize a dual arm joint path using TOPP-RA with a Drake plant, takes about ~ 35ms.
+
+    You have to use the resulting trajectories like this:
+    ```
+    for t in np.linspace(0, time_trajectory.end_time(), steps):
+        joints = joint_trajectory.value(time_trajectory.value(t).item())
+    ```
+    """
+    n_dofs = 12
+    path = np.array(dual_arm_joint_path).reshape(-1, n_dofs)  # should be e.g. (500, 12)
+
+    times_dummy = np.linspace(0.0, 1.0, len(path))
+    joint_trajectory = PiecewisePolynomial.CubicWithContinuousSecondDerivatives(times_dummy, path.T)
+
+    gridpoints = Toppra.CalcGridPoints(joint_trajectory, CalcGridPointsOptions())
+    toppra = Toppra(joint_trajectory, plant, gridpoints)
+    toppra.AddJointAccelerationLimit([-joint_acceleration_limit] * n_dofs, [joint_acceleration_limit] * n_dofs)
+    toppra.AddJointVelocityLimit([-joint_speed_limit] * n_dofs, [joint_speed_limit] * n_dofs)
+    time_trajectory = toppra.SolvePathParameterization()
+
+    return joint_trajectory, time_trajectory
 
 
 def calculate_path_array_duration(path_array: np.ndarray, max_allowed_speed: float = 0.5) -> float:
