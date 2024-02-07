@@ -3,7 +3,6 @@ from typing import List, Tuple
 import numpy as np
 from airo_robots.manipulators.bimanual_position_manipulator import DualArmPositionManipulator
 from airo_typing import JointConfigurationType
-from loguru import logger
 from pydrake.multibody.optimization import CalcGridPointsOptions, Toppra
 from pydrake.multibody.plant import MultibodyPlant
 from pydrake.trajectories import PiecewisePolynomial, Trajectory
@@ -12,8 +11,8 @@ from pydrake.trajectories import PiecewisePolynomial, Trajectory
 def time_parametrize_toppra(
     dual_arm_joint_path: List[Tuple[JointConfigurationType, JointConfigurationType]],
     plant: MultibodyPlant,
-    joint_speed_limit: float = 1.0,
-    joint_acceleration_limit: float = 1.2,
+    joint_speed_limit: float = 2.0,  # Max 180 degrees/s ~ 3.14 rad/s
+    joint_acceleration_limit: float = 4.0,  # UR recommends < 800 degrees/s^2 ~ 13.9 rad/s^2
 ) -> Tuple[Trajectory, Trajectory]:
     """Time-parametrize a dual arm joint path using TOPP-RA with a Drake plant, takes about ~ 35ms."""
     n_dofs = 12
@@ -40,7 +39,6 @@ def execute_dual_arm_trajectory(
     dual_arm: DualArmPositionManipulator, joint_trajectory: Trajectory, time_trajectory: Trajectory
 ):
     start_joints = joint_trajectory.value(time_trajectory.value(0).item()).squeeze()
-    logger.info(f"Shape of start_joints: {start_joints.shape}")
     start_joints_left = start_joints[0:6]
     start_joints_right = start_joints[6:12]
 

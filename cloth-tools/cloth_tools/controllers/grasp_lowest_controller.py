@@ -24,9 +24,9 @@ from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
 from cloth_tools.drake.scenes import add_dual_ur5e_and_table_to_builder
-from cloth_tools.drake.visualization import publish_dual_arm_joint_path
+from cloth_tools.drake.visualization import publish_dual_arm_trajectory
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
-from cloth_tools.path.execution import calculate_dual_path_duration, execute_dual_arm_joint_path
+from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation, inverse_kinematics_in_world_fn
@@ -81,8 +81,6 @@ class GraspLowestController(Controller):
         self.station = station
         self.bbox = bbox
 
-        self.joint_speed = 1.0  # rad/s
-
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
         self._grasp_pose: Optional[HomogeneousMatrixType] = None
@@ -90,8 +88,14 @@ class GraspLowestController(Controller):
         self._lowest_point: Optional[Vector3DType] = None
         self._pregrasp_pose: Optional[HomogeneousMatrixType] = None
         self._path_pregrasp: Optional[Any] = None
-        self._path_right_home: Optional[Any] = None
-        self._path_left_hang: Optional[Any] = None
+        self._path_home_right: Optional[Any] = None
+        self._path_hang_left: Optional[Any] = None
+        self._trajectory_pregrasp: Optional[Any] = None
+        self._trajectory_right_home: Optional[Any] = None
+        self._trajectory_hang_left: Optional[Any] = None
+        self._time_trajectory_pregrasp: Optional[Any] = None
+        self._time_trajectory_right_home: Optional[Any] = None
+        self._time_trajectory_hang_left: Optional[Any] = None
         self._hull_vertex_positions: Optional[np.ndarray] = None
         self._hull_vertex_normals: Optional[np.ndarray] = None
         self._hull_triangle_indices: Optional[np.ndarray] = None
@@ -116,7 +120,7 @@ class GraspLowestController(Controller):
         dual_arm = self.station.dual_arm
 
         # Execute the path to the pregrasp pose
-        execute_dual_arm_joint_path(dual_arm, self._path_pregrasp, self.joint_speed)
+        execute_dual_arm_trajectory(dual_arm, self._trajectory_pregrasp, self._time_trajectory_pregrasp)
 
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(self._grasp_pose, None, linear_speed=0.2).wait()
@@ -125,10 +129,10 @@ class GraspLowestController(Controller):
 
         # Open the right gripper of the cloth be released
         dual_arm.right_manipulator.gripper.open().wait()
-        execute_dual_arm_joint_path(dual_arm, self._path_right_home, self.joint_speed)
+        execute_dual_arm_trajectory(dual_arm, self._trajectory_right_home, self._time_trajectory_right_home)
 
         # Move the left arm to the hang pose
-        execute_dual_arm_joint_path(dual_arm, self._path_left_hang, self.joint_speed)
+        execute_dual_arm_trajectory(dual_arm, self._trajectory_hang_left, self._time_trajectory_hang_left)
 
     def _create_cloth_obstacle_planner(self, point_cloud_cloth: PointCloud) -> DualArmOmplPlanner:
         """Very similar to the method in CompetitionStation, but with the cloth as a runtime obstacle."""
@@ -271,6 +275,12 @@ class GraspLowestController(Controller):
 
             if path_pregrasp is not None:
                 logger.info(f"Found path to pregrasp pose with distance {d}.")
+
+                trajectory_pregrasp, time_trajectory_pregrasp = time_parametrize_toppra(
+                    path_pregrasp, self._diagram.plant()
+                )
+                self._trajectory_pregrasp = trajectory_pregrasp
+                self._time_trajectory_pregrasp = time_trajectory_pregrasp
                 break
             else:
                 logger.info(f"No path to pregrasp pose with distance {d}.")
@@ -279,8 +289,14 @@ class GraspLowestController(Controller):
             logger.info("No path to any of the tried pregrasp poses found.")
             # Maybe reset all state at the beginning of each plan call?
             self._path_pregrasp = None
-            self._path_right_home = None
-            self._path_left_hang = None
+            self._path_home_right = None
+            self._path_hang_left = None
+            self._trajectory_pregrasp = None
+            self._trajectory_right_home = None
+            self._trajectory_hang_left = None
+            self._time_trajectory_pregrasp = None
+            self._time_trajectory_right_home = None
+            self._time_trajectory_hang_left = None
             return
 
         # Here the right arm opens its gripper and moves to its home position
@@ -290,34 +306,46 @@ class GraspLowestController(Controller):
         pregrasp_joints_left = path_pregrasp[-1][0]
 
         home_joints_right = self.station.home_joints_right
-        path_right_home = planner.plan_to_joint_configuration(
+        path_home_right = planner.plan_to_joint_configuration(
             pregrasp_joints_left, start_joints_right, None, home_joints_right
         )
-        self._path_right_home = path_right_home
+        self._path_home_right = path_home_right
+        trajectory_right_home, time_trajectory_right_home = time_parametrize_toppra(
+            path_home_right, self._diagram.plant()
+        )
+        self._trajectory_right_home = trajectory_right_home
+        self._time_trajectory_right_home = time_trajectory_right_home
 
         home_joints_wrist_flipped_left = self.station.home_joints_left.copy()
         home_joints_wrist_flipped_left[5] = -home_joints_wrist_flipped_left[5]
 
         # Plan for the left arm to move to the hang pose
         hang_pose = hang_in_the_air_tcp_pose(left=True)
-        path_left_hang = planner.plan_to_tcp_pose(
+        path_hang_left = planner.plan_to_tcp_pose(
             pregrasp_joints_left,
             home_joints_right,
             hang_pose,
             None,
             desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
         )
-        self._path_left_hang = path_left_hang
+        self._path_hang_left = path_hang_left
+
+        # Limit the acceleration of the joints to avoid the cloth swinging too much
+        trajectory_hang_left, time_trajectory_hang_left = time_parametrize_toppra(
+            path_hang_left, self._diagram.plant(), joint_acceleration_limit=0.5
+        )
+        self._trajectory_hang_left = trajectory_hang_left
+        self._time_trajectory_hang_left = time_trajectory_hang_left
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
         if self._path_pregrasp is None:
             return False
 
-        if self._path_right_home is None:
+        if self._path_home_right is None:
             return False
 
-        if self._path_left_hang is None:
+        if self._path_hang_left is None:
             return False
 
         return True
@@ -351,18 +379,16 @@ class GraspLowestController(Controller):
             rr.log("world/pregrasp_pose", rr_pregrasp_pose)
 
         if self._path_pregrasp is not None:
-            path = self._path_pregrasp
-            duration = calculate_dual_path_duration(path, self.joint_speed)
-            publish_dual_arm_joint_path(
-                path, duration, self._meshcat, self._diagram, self._context, *self._arm_indices
-            )
-
-        if self._path_left_hang is not None:
-            path = self._path_left_hang
             station = self.station
-            duration = calculate_dual_path_duration(path, self.joint_speed)
-            publish_dual_arm_joint_path(
-                path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
+            trajectory = self._trajectory_pregrasp
+            time_trajectory = self._time_trajectory_pregrasp
+            publish_dual_arm_trajectory(
+                trajectory,
+                time_trajectory,
+                station._meshcat,
+                station._diagram,
+                station._context,
+                *station._arm_indices,
             )
 
         if self._point_cloud is not None:
