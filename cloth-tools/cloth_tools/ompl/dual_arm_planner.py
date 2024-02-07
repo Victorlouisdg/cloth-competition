@@ -238,7 +238,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         start_configuration_left: JointConfigurationType,
         start_configuration_right: JointConfigurationType,
         tcp_pose_left_in_base: HomogeneousMatrixType,
-        dersirable_goal_configurations_left: List[JointConfigurationType] | None = None,
+        desirable_goal_configurations_left: List[JointConfigurationType] | None = None,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
         # Set right goal to right start configuration
         self._set_start_and_goal_configurations(
@@ -246,7 +246,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         )
 
         left_path = self._single_arm_planner_left.plan_to_tcp_pose(
-            start_configuration_left, tcp_pose_left_in_base, dersirable_goal_configurations_left
+            start_configuration_left, tcp_pose_left_in_base, desirable_goal_configurations_left
         )
 
         if left_path is None:
@@ -260,7 +260,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         start_configuration_left: JointConfigurationType,
         start_configuration_right: JointConfigurationType,
         tcp_pose_right_in_base: HomogeneousMatrixType,
-        dersirable_goal_configurations_right: List[JointConfigurationType] | None = None,
+        desirable_goal_configurations_right: List[JointConfigurationType] | None = None,
     ) -> List[Tuple[JointConfigurationType, JointConfigurationType]] | None:
         # Set left goal to left start configuration
         self._set_start_and_goal_configurations(
@@ -268,7 +268,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         )
 
         right_path = self._single_arm_planner_right.plan_to_tcp_pose(
-            start_configuration_right, tcp_pose_right_in_base, dersirable_goal_configurations_right
+            start_configuration_right, tcp_pose_right_in_base, desirable_goal_configurations_right
         )
 
         if right_path is None:
@@ -378,8 +378,8 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
         start_configuration_right: JointConfigurationType,
         tcp_pose_left_in_base: HomogeneousMatrixType | None,
         tcp_pose_right_in_base: HomogeneousMatrixType | None,
-        dersirable_goal_configurations_left: List[JointConfigurationType] | None = None,
-        dersirable_goal_configurations_right: List[JointConfigurationType] | None = None,
+        desirable_goal_configurations_left: List[JointConfigurationType] | None = None,
+        desirable_goal_configurations_right: List[JointConfigurationType] | None = None,
     ) -> List[JointConfigurationType]:
         if tcp_pose_left_in_base is None and tcp_pose_right_in_base is None:
             raise ValueError("A goal TCP pose must be specified for at least one of the arms.")
@@ -389,7 +389,7 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
                 start_configuration_left,
                 start_configuration_right,
                 tcp_pose_left_in_base,
-                dersirable_goal_configurations_left,
+                desirable_goal_configurations_left,
             )
             return path
 
@@ -398,12 +398,12 @@ class DualArmOmplPlanner(DualArmMotionPlanner):
                 start_configuration_left,
                 start_configuration_right,
                 tcp_pose_right_in_base,
-                dersirable_goal_configurations_right,
+                desirable_goal_configurations_right,
             )
             return path
 
         # TODO use desirable_goal_configurations for dual arm planning
-        if dersirable_goal_configurations_left is not None or dersirable_goal_configurations_right is not None:
+        if desirable_goal_configurations_left is not None or desirable_goal_configurations_right is not None:
             logger.warning(
                 "Desirable goal configurations are not implemented yet for dual arm planning, ignoring them."
             )

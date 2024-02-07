@@ -30,6 +30,31 @@ def inverse_kinematics_in_world_fn(
     return solutions
 
 
+def check_zed_point_cloud_completeness(camera: Zed2i):
+    # Check whether the point cloud is complete, i.e. if there are any points closers than 1.0 meters
+    point_cloud = camera.get_colored_point_cloud()
+    image_rgb = camera.get_rgb_image_as_int()
+    confidence_map = camera._retrieve_confidence_map()
+    depth_map = camera._retrieve_depth_map()
+    depth_image = camera._retrieve_depth_image()
+
+    distances = np.linalg.norm(point_cloud.points, axis=1)
+    print(distances.shape)
+    if not np.any(distances < 1.2):
+        print(distances)
+        logger.info("The point cloud is not complete, logging it to rerun.")
+        import rerun as rr
+
+        rr.init("Competition Station - Point cloud", spawn=True)
+        rr.log("world/point_cloud", rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors))
+        rr.log("image", rr.Image(image_rgb).compress(jpeg_quality=90))
+        rr.log("depth_image", rr.Image(depth_image).compress(jpeg_quality=90))
+        rr.log("depth_map", rr.DepthImage(depth_map))
+        rr.log("confidence_map", rr.Image(confidence_map))
+
+        raise RuntimeError("The point cloud is incomplete. Restart the ZED2i camera.")
+
+
 class CompetitionStation(DualArmStation):
     """
     This station specifically contains the hardware setup for the ICRA 2024 competition.
@@ -41,6 +66,8 @@ class CompetitionStation(DualArmStation):
         # Setting up the camera
         # TODO start multiprocessed camera here and add video recorders etc.
         camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
+        check_zed_point_cloud_completeness(camera)
+
         camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
 
         X_W_C, X_W_LCB, X_W_RCB = create_egocentric_world_frame(camera_pose_in_left, camera_pose_in_right)
@@ -121,6 +148,7 @@ class CompetitionStation(DualArmStation):
 
 if __name__ == "__main__":
     import cv2
+    import rerun as rr
     from airo_camera_toolkit.utils.image_converter import ImageConverter
     from cloth_tools.visualization.opencv import draw_pose
 
@@ -135,9 +163,17 @@ if __name__ == "__main__":
 
     window_name = "Competiton station"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(window_name, 1600, 800)
+
+    rr.init("Competition Station - Point cloud", spawn=True)
 
     while True:
         image_rgb = camera.get_rgb_image_as_int()
+        point_cloud = camera._retrieve_colored_point_cloud()
+        confidence_map = camera._retrieve_confidence_map()
+        depth_map = camera._retrieve_depth_map()
+        depth_image = camera._retrieve_depth_image()
+
         image_bgr = ImageConverter.from_numpy_int_format(image_rgb).image_in_opencv_format
 
         X_CB_LTCP = dual_arm.left_manipulator.get_tcp_pose()
@@ -154,3 +190,11 @@ if __name__ == "__main__":
         key = cv2.waitKey(1)
         if key == ord("q"):
             break
+
+        # Unfiltered point cloud in camera frame
+        rr_point_cloud = rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors)
+        rr.log("world/point_cloud", rr_point_cloud)
+        rr.log("image", rr.Image(image_rgb).compress(jpeg_quality=90))
+        rr.log("depth_image", rr.Image(depth_image).compress(jpeg_quality=90))
+        rr.log("depth_map", rr.DepthImage(depth_map))
+        rr.log("confidence_map", rr.Image(confidence_map))

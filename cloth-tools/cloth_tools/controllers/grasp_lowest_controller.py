@@ -9,7 +9,7 @@ import rerun as rr
 from airo_camera_toolkit.point_clouds.conversions import point_cloud_to_open3d
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
-from airo_models import mesh_urdf_path
+from airo_models import box_urdf_path, mesh_urdf_path
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
@@ -35,6 +35,7 @@ from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
+from pydrake.math import RigidTransform
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
 
 import open3d as o3d  # isort:skip
@@ -155,13 +156,32 @@ class GraspLowestController(Controller):
         self._hull_vertex_normals = hull.vertex.normals.numpy()
         self._hull_triangle_indices = hull.triangle.indices.numpy()
 
+        # Also add safety wall in front of the right TCP
+        # TODO: change this to also support the left arm
+        X_RCB_TCP = self.station.dual_arm.right_manipulator.get_tcp_pose()
+        X_W_TCP = X_W_RCB @ X_RCB_TCP
+
+        safety_wall_thickness = 0.05
+        safety_wall_urdf_path = box_urdf_path((0.2, safety_wall_thickness, 0.3), "safety_wall")
+
+        # Position the safety wall in front of the left TCP
+        shift = safety_wall_thickness / 2 + 0.01
+        p_W_S = X_W_TCP[:3, 3] + X_W_TCP[:3, 2] * shift
+        X_W_S = RigidTransform(p=p_W_S)
+
         # Add the cloth hull to the scene
         plant = robot_diagram_builder.plant()
         parser = robot_diagram_builder.parser()
         hull_index = parser.AddModels(hull_urdf_path)[0]
+        safety_wall_index = parser.AddModels(safety_wall_urdf_path)[0]
+
         world_frame = plant.world_frame()
         hull_frame = plant.GetFrameByName("base_link", hull_index)
+
+        safety_wall_frame = plant.GetFrameByName("base_link", safety_wall_index)
+
         plant.WeldFrames(world_frame, hull_frame)
+        plant.WeldFrames(world_frame, safety_wall_frame, X_W_S)
 
         diagram, context = finish_build(robot_diagram_builder, meshcat)
 
@@ -211,6 +231,7 @@ class GraspLowestController(Controller):
         point_cloud_cropped = crop_point_cloud(point_cloud, self.bbox)
 
         if len(point_cloud_cropped.points) == 0:
+            logger.info("No points in the cropped point cloud.")
             self._lowest_point = None
             self._grasp_pose = None
             return
@@ -223,31 +244,43 @@ class GraspLowestController(Controller):
 
         logger.info(f"Found lowest point in bbox at: {lowest_point_}")
 
-        pregrasp_pose = move_pose_backwards(grasp_pose, 0.15)
-        self._pregrasp_pose = pregrasp_pose
+        planner_cloth = self._create_cloth_obstacle_planner(point_cloud_cropped)
 
         # Create planner with cloth obstacle
-        planner_cloth = self._create_cloth_obstacle_planner(point_cloud_cropped)
 
         dual_arm = self.station.dual_arm
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        # For debugging
-        # plant = self._diagram.plant()
-        # plant_context = plant.GetMyContextFromRoot(self._context)
-        # plant.SetPositions(plant_context, self._arm_indices[1], start_joints_right.squeeze())
+        # Try moving pregrasp pose 15, 20 and 25 cm backwards, sometimes lowest point is too "deep" into the cloth
+        distances_to_try = [0.15, 0.20, 0.25]
+        for d in distances_to_try:
+            pregrasp_pose = move_pose_backwards(grasp_pose, d)
+            self._pregrasp_pose = pregrasp_pose
 
-        # X_W_LCB = self.station.left_arm_pose
-        # inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
-        # ik_solutions = inverse_kinematics_left_fn(pregrasp_pose)
-        # publish_ik_solutions(ik_solutions, 2.0, self._meshcat, self._diagram, self._context, self._arm_indices[0])
-        # input("Press Enter to continue...")
+            path_pregrasp = planner_cloth.plan_to_tcp_pose(
+                start_joints_left,
+                start_joints_right,
+                pregrasp_pose,
+                None,
+                desirable_goal_configurations_left=[
+                    self.station.home_joints_left
+                ],  # Try to avoid the shoulder from pointing towards the camera
+            )
+            self._path_pregrasp = path_pregrasp
 
-        path_pregrasp = planner_cloth.plan_to_tcp_pose(start_joints_left, start_joints_right, pregrasp_pose, None)
-        self._path_pregrasp = path_pregrasp
+            if path_pregrasp is not None:
+                logger.info(f"Found path to pregrasp pose with distance {d}.")
+                break
+            else:
+                logger.info(f"No path to pregrasp pose with distance {d}.")
 
         if path_pregrasp is None:
+            logger.info("No path to any of the tried pregrasp poses found.")
+            # Maybe reset all state at the beginning of each plan call?
+            self._path_pregrasp = None
+            self._path_right_home = None
+            self._path_left_hang = None
             return
 
         # Here the right arm opens its gripper and moves to its home position
@@ -262,9 +295,18 @@ class GraspLowestController(Controller):
         )
         self._path_right_home = path_right_home
 
+        home_joints_wrist_flipped_left = self.station.home_joints_left.copy()
+        home_joints_wrist_flipped_left[5] = -home_joints_wrist_flipped_left[5]
+
         # Plan for the left arm to move to the hang pose
         hang_pose = hang_in_the_air_tcp_pose(left=True)
-        path_left_hang = planner.plan_to_tcp_pose(pregrasp_joints_left, home_joints_right, hang_pose, None)
+        path_left_hang = planner.plan_to_tcp_pose(
+            pregrasp_joints_left,
+            home_joints_right,
+            hang_pose,
+            None,
+            desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
+        )
         self._path_left_hang = path_left_hang
 
     def _can_execute(self) -> bool:
@@ -359,6 +401,11 @@ class GraspLowestController(Controller):
         if self._grasp_pose is None:
             logger.info("Grasp and hang not executed because no grasp pose was found.")
             return
+
+        if not self._can_execute():
+            logger.info("Grasp and hang not executed because the plan is not complete.")
+            return
+
         self.execute_handover()
 
     # TODO: remove this duplication, maybe through inheritance?
