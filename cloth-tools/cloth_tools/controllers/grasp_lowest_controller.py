@@ -235,8 +235,8 @@ class GraspLowestController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        # Try moving pregrasp pose 15, 20 and 25 cm backwards, sometimes lowest point is too "deep" into the cloth
-        distances_to_try = [0.15, 0.20, 0.25]
+        # Try moving pregrasp pose to several distances from the grasp pose
+        distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
         for d in distances_to_try:
             pregrasp_pose = move_pose_backwards(grasp_pose, d)
             self._pregrasp_pose = pregrasp_pose
@@ -358,16 +358,15 @@ class GraspLowestController(Controller):
             rr.log("world/pregrasp_pose", rr_pregrasp_pose)
 
         if self._path_pregrasp is not None:
-            station = self.station
             trajectory = self._trajectory_pregrasp
             time_trajectory = self._time_trajectory_pregrasp
             publish_dual_arm_trajectory(
                 trajectory,
                 time_trajectory,
-                station._meshcat,
-                station._diagram,
-                station._context,
-                *station._arm_indices,
+                self._meshcat,
+                self._diagram,
+                self._context,
+                *self._arm_indices,
             )
 
         if self._point_cloud is not None:

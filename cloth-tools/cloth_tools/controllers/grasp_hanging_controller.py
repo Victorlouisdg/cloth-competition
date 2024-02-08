@@ -136,8 +136,8 @@ class GraspHangingController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        # Try moving pregrasp pose 15, 20 and 25 cm backwards, sometimes lowest point is too "deep" into the cloth
-        distances_to_try = [0.15, 0.20, 0.25]
+        # Try moving pregrasp pose to several distances from the grasp pose
+        distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
         for d in distances_to_try:
             pregrasp_pose = move_pose_backwards(grasp_pose, d)
             self._pregrasp_pose = pregrasp_pose
@@ -184,7 +184,6 @@ class GraspHangingController(Controller):
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(None, self._grasp_pose, linear_speed=0.2).wait()
         dual_arm.right_manipulator.gripper.close().wait()
-        dual_arm.move_linear_to_tcp_pose(None, self._pregrasp_pose, linear_speed=0.2).wait()
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
