@@ -29,6 +29,7 @@ dependencies = [
     "airo-camera-toolkit @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-camera-toolkit",
     "airo-dataset-tools @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-dataset-tools",
     "linen @ git+https://github.com/Victorlouisdg/linen@main#subdirectory=linen",
+    "ffmpegcv"
 ]
 
 [project.urls]
