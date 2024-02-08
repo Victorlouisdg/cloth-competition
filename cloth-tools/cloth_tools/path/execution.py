@@ -60,8 +60,9 @@ def execute_dual_arm_trajectory(
         right_servo.wait()
 
     # This avoids the abrupt stop and "thunk" sounds at the end of paths that end with non-zero velocity
-    dual_arm.left_manipulator.rtde_control.servoStop(4.0)
-    dual_arm.right_manipulator.rtde_control.servoStop(4.0)
+    # However, I believe these functions are blocking, so right only stops after left has stopped.
+    dual_arm.left_manipulator.rtde_control.servoStop(2.0)
+    dual_arm.right_manipulator.rtde_control.servoStop(2.0)
 
 
 def calculate_path_array_duration(path_array: np.ndarray, max_allowed_speed: float = 0.5) -> float:
