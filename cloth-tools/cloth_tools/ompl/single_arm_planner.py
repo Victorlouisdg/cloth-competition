@@ -59,6 +59,7 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
         self._simple_setup = self._create_simple_setup()
 
         self._path_length: float | None = None
+        self._ik_solutions: List[JointConfigurationType] | None = None  # Saved for debugging
 
     def _create_simple_setup(self):
         # Create state space and convert to OMPL compatible data types
@@ -146,6 +147,8 @@ class SingleArmOmplPlanner(SingleArmMotionPlanner):
             return None
 
         ik_solutions = self.inverse_kinematics_fn(tcp_pose_in_base)
+        self._ik_solutions = ik_solutions  # Save for debugging
+
         if ik_solutions is None or len(ik_solutions) == 0:
             logger.info("IK returned no solutions, returning None.")
             return None

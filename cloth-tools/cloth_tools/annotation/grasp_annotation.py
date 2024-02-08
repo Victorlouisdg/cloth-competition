@@ -224,8 +224,8 @@ def get_manual_grasp_annotation(  # noqa: C901
         point_cloud, X_W_VC, intrinsics, resolution, background_color=(90, 90, 90), blur_image=True
     )
 
-    image_topdown = image_topdown_sharp
-    blur_image = False
+    image_topdown = image_topdown_blurred
+    blur_image = True
     grasp_pose = None
 
     while True:
@@ -250,10 +250,12 @@ def get_manual_grasp_annotation(  # noqa: C901
         cv2.imshow(window_topdown, image_topdown_annotated)
         key = cv2.waitKey(10)
         if key == ord("q"):
-            cv2.destroyAllWindows()
+            cv2.destroyWindow(window_frontal)
+            cv2.destroyWindow(window_topdown)
             return None
         if key == ord("y"):
-            cv2.destroyAllWindows()
+            cv2.destroyWindow(window_frontal)
+            cv2.destroyWindow(window_topdown)
             return grasp_pose
         if key == ord("b"):
             blur_image = not blur_image

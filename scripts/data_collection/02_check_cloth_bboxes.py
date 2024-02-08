@@ -104,7 +104,7 @@ if __name__ == "__main__":
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     while True:
-        image_rgb, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, X_W_C)
+        image_rgb, _, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, X_W_C)
 
         rr_point_cloud = rr.Points3D(positions=point_cloud_filtered.points, colors=point_cloud_filtered.colors)
         rr.log("world/point_cloud", rr_point_cloud)

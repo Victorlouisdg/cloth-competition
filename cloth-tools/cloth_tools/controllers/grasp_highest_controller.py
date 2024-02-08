@@ -146,7 +146,7 @@ class GraspHighestController(Controller):
         camera_pose = self.station.camera_pose
 
         time.sleep(1.0)  # without this sleep I've noticed motion blur on the images e.g. is the cloth has just fallen
-        image_rgb, point_cloud = get_image_and_filtered_point_cloud(camera, camera_pose)
+        image_rgb, _, point_cloud = get_image_and_filtered_point_cloud(camera, camera_pose)
         image = ImageConverter.from_numpy_int_format(image_rgb).image_in_opencv_format
 
         self._image = image
