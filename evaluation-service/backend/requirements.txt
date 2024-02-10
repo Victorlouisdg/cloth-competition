@@ -1,0 +1,8 @@
+torch
+torchvision
+torchaudio
+opencv-python
+pycocotools
+matplotlib
+onnxruntime
+onnx
