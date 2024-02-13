@@ -1,8 +1,8 @@
 import time
 
-from airo_camera_toolkit.cameras.multiprocess.multiprocess_rgbd_camera import (
-    MultiprocessRGBDPublisher,
-    MultiprocessRGBDReceiver,
+from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera import (
+    MultiprocessStereoRGBDPublisher,
+    MultiprocessStereoRGBDReceiver,
 )
 from airo_camera_toolkit.cameras.multiprocess.multiprocess_video_recorder import MultiprocessVideoRecorder
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
@@ -16,7 +16,7 @@ if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")
     # station = CompetitionStation()
 
-    camera_publisher = MultiprocessRGBDPublisher(
+    camera_publisher = MultiprocessStereoRGBDPublisher(
         Zed2i,
         camera_kwargs={
             "resolution": Zed2i.RESOLUTION_2K,
@@ -27,7 +27,7 @@ if __name__ == "__main__":
     )
 
     camera_publisher.start()
-    camera = MultiprocessRGBDReceiver("camera")
+    camera = MultiprocessStereoRGBDReceiver("camera")
 
     # camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, fps=15, depth_mode=Zed2i.NEURAL_DEPTH_MODE)
 

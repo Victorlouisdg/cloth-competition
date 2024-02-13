@@ -43,8 +43,7 @@ class CompetitionObservation:
     right_camera_pose_in_left_camera: HomogeneousMatrixType
 
     # Camera intrinsics
-    camera_intrinsics_left: CameraIntrinsicsMatrixType
-    camera_intrinsics_right: CameraIntrinsicsMatrixType
+    camera_intrinsics: CameraIntrinsicsMatrixType
     camera_resolution: CameraResolutionType
 
 
@@ -64,8 +63,7 @@ COMPETITION_OBSERVATION_FILENAMES = {
     "arm_left_tcp_pose_in_world": "arm_left_tcp_pose_in_world.json",
     "arm_right_tcp_pose_in_world": "arm_right_tcp_pose_in_world.json",
     "right_camera_pose_in_left_camera": "right_camera_pose_in_left_camera.json",
-    "camera_intrinsics_left": "camera_intrinsics_left.json",
-    "camera_intrinsics_right": "camera_intrinsics_right.json",
+    "camera_intrinsics": "camera_intrinsics.json",
     "camera_resolution": "camera_resolution.json",
 }
 
@@ -96,17 +94,11 @@ def save_competition_observation(observation: CompetitionObservation, observatio
         depth_image = ImageConverter.from_numpy_int_format(observation.depth_image).image_in_opencv_format
         cv2.imwrite(filepaths["depth_image"], depth_image)
 
-    with open(filepaths["camera_intrinsics_left"], "w") as f:
+    with open(filepaths["camera_intrinsics"], "w") as f:
         intrinsics_model_left = CameraIntrinsics.from_matrix_and_resolution(
-            observation.camera_intrinsics_left, observation.camera_resolution
+            observation.camera_intrinsics, observation.camera_resolution
         )
         json.dump(intrinsics_model_left.model_dump(exclude_none=True), f, indent=4)
-
-    with open(filepaths["camera_intrinsics_right"], "w") as f:
-        intrinsics_model_right = CameraIntrinsics.from_matrix_and_resolution(
-            observation.camera_intrinsics_right, observation.camera_resolution
-        )
-        json.dump(intrinsics_model_right.model_dump(exclude_none=True), f, indent=4)
 
     with open(filepaths["camera_pose_in_world"], "w") as f:
         camera_pose_model = Pose.from_homogeneous_matrix(observation.camera_pose_in_world)
@@ -135,6 +127,8 @@ def save_competition_observation(observation: CompetitionObservation, observatio
     with open(filepaths["arm_right_tcp_pose_in_world"], "w") as f:
         arm_right_tcp_pose_model = Pose.from_homogeneous_matrix(observation.arm_right_tcp_pose_in_world)
         json.dump(arm_right_tcp_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    logger.info(f"Saved observation to {observation_dir}")
 
 
 # def load_competition_input_sample(dataset_dir: str, sample_index: int) -> CompetitionObservation:

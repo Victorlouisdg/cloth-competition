@@ -290,8 +290,7 @@ def get_manual_grasp_annotation(  # noqa: C901
 
         cv2.imshow(window_frontal, image_frontal_annotated)
         cv2.imshow(window_topdown, image_topdown_annotated)
-        key = cv2.waitKey(100)
-        logger.info(f"Pressed key: {key}")
+        key = cv2.waitKey(10)
 
         grasp_annotation_info = GraspAnnotationInfo(
             grasp_pose=grasp_pose,

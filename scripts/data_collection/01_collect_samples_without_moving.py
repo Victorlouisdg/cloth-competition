@@ -31,11 +31,10 @@ def collect_competition_samples(
     camera_pose_in_world = station.camera_pose
     arm_left_pose_in_world = station.left_arm_pose
     arm_right_pose_in_world = station.right_arm_pose
-
-    camera_intrinsics_left = camera.intrinsics_matrix(StereoRGBDCamera.LEFT_RGB)
-    camera_intrinsics_right = camera.intrinsics_matrix(StereoRGBDCamera.RIGHT_RGB)
-    camera_resolution = camera.resolution
     right_camera_pose_in_left_camera = camera.pose_of_right_view_in_left_view
+
+    camera_intrinsics = camera.intrinsics_matrix()
+    camera_resolution = camera.resolution
 
     window_name = "Competition observation collection"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -81,8 +80,7 @@ def collect_competition_samples(
                 arm_left_tcp_pose_in_world=arm_left_tcp_pose_in_world,
                 arm_right_tcp_pose_in_world=arm_right_tcp_pose_in_world,
                 right_camera_pose_in_left_camera=right_camera_pose_in_left_camera,
-                camera_intrinsics_left=camera_intrinsics_left,
-                camera_intrinsics_right=camera_intrinsics_right,
+                camera_intrinsics=camera_intrinsics,
                 camera_resolution=camera_resolution,
             )
 

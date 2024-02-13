@@ -9,35 +9,35 @@ from cloth_tools.controllers.stretch_controller import StretchController
 from cloth_tools.stations.competition_station import CompetitionStation
 from loguru import logger
 
-station = CompetitionStation()
+if __name__ == "__main__":
+    station = CompetitionStation()
 
-dual_arm = station.dual_arm
+    dual_arm = station.dual_arm
 
-while True:
-    # Move the arms to their home positions
-    home_controller = HomeController(station)
-    home_controller.execute(interactive=False)
+    while True:
+        # Move the arms to their home positions
+        home_controller = HomeController(station)
+        home_controller.execute(interactive=False)
 
-    grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
-    grasp_highest_controller.execute(interactive=True)
+        grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
+        grasp_highest_controller.execute(interactive=True)
 
-    time_to_stop_swinging = 5
-    logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
-    time.sleep(time_to_stop_swinging)
+        time_to_stop_swinging = 5
+        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
+        time.sleep(time_to_stop_swinging)
 
-    grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
-    grasp_lowest_controller.execute(interactive=True)
+        grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
+        grasp_lowest_controller.execute(interactive=True)
 
-    logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
+        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
 
-    # Save competition input data here
+        # Save competition input data here
+        grasp_hanging_controller = GraspHangingController(station, BBOX_CLOTH_IN_THE_AIR)
+        grasp_hanging_controller.execute(interactive=True)
 
-    grasp_hanging_controller = GraspHangingController(station, BBOX_CLOTH_IN_THE_AIR)
-    grasp_hanging_controller.execute(interactive=True)
+        stretch_controller = StretchController(station)
+        stretch_controller.execute(interactive=True)
 
-    stretch_controller = StretchController(station)
-    stretch_controller.execute(interactive=True)
+        # Save results here
 
-    # Save results here
-
-    logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
+        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")

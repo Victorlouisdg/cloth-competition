@@ -1,8 +1,14 @@
+import multiprocessing
 from functools import partial
 from typing import List
 
 import numpy as np
+from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera import (
+    MultiprocessStereoRGBDPublisher,
+    MultiprocessStereoRGBDReceiver,
+)
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
+from airo_camera_toolkit.interfaces import StereoRGBDCamera
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e_in_world
 from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
@@ -34,6 +40,7 @@ def check_zed_point_cloud_completeness(camera: Zed2i):
     # Check whether the point cloud is complete, i.e. if there are any points closers than 1.0 meters
     point_cloud = camera.get_colored_point_cloud()
     image_rgb = camera.get_rgb_image_as_int()
+    image_right_rgb = camera._retrieve_rgb_image_as_int(StereoRGBDCamera.RIGHT_RGB)
     confidence_map = camera._retrieve_confidence_map()
     depth_map = camera._retrieve_depth_map()
     depth_image = camera._retrieve_depth_image()
@@ -47,6 +54,7 @@ def check_zed_point_cloud_completeness(camera: Zed2i):
         rr.init("Competition Station - Point cloud", spawn=True)
         rr.log("world/point_cloud", rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors))
         rr.log("image", rr.Image(image_rgb).compress(jpeg_quality=90))
+        rr.log("image_right", rr.Image(image_right_rgb).compress(jpeg_quality=90))
         rr.log("depth_image", rr.Image(depth_image).compress(jpeg_quality=90))
         rr.log("depth_map", rr.DepthImage(depth_map))
         rr.log("confidence_map", rr.Image(confidence_map))
@@ -61,10 +69,26 @@ class CompetitionStation(DualArmStation):
     The robots are mounted approximately 0.9 meter apart.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, create_multiprocess_camera: bool = True) -> None:
+
         # Setting up the camera
-        # TODO start multiprocessed camera here and add video recorders etc.
-        camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
+        camera_kwargs = {
+            "resolution": Zed2i.RESOLUTION_2K,
+            "depth_mode": Zed2i.NEURAL_DEPTH_MODE,
+            "fps": 15,
+        }
+        self.camera_publisher = None
+
+        if create_multiprocess_camera:
+            multiprocessing.set_start_method("spawn")
+
+            # Running the camera in a seperate process enables us to record videos even if the main process is blocking
+            self.camera_publisher = MultiprocessStereoRGBDPublisher(Zed2i, camera_kwargs)
+            self.camera_publisher.start()
+            camera = MultiprocessStereoRGBDReceiver("camera")
+        else:
+            camera = Zed2i(**camera_kwargs)
+
         check_zed_point_cloud_completeness(camera)
 
         camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
@@ -105,6 +129,11 @@ class CompetitionStation(DualArmStation):
         diagram.ForcedPublish(context)
 
         logger.info("CompetitionStation initialized.")
+
+    def __del__(self):
+        if self.camera_publisher is not None:
+            self.camera_publisher.stop()
+            self.camera_publisher.join()
 
     def _setup_planner(self, X_W_LCB, X_W_RCB) -> DualArmOmplPlanner:
         # Creating the default scene
@@ -168,6 +197,7 @@ if __name__ == "__main__":
 
     while True:
         image_rgb = camera.get_rgb_image_as_int()
+        image_right_rgb = camera._retrieve_rgb_image_as_int(StereoRGBDCamera.RIGHT_RGB)
         point_cloud = camera._retrieve_colored_point_cloud()
         confidence_map = camera._retrieve_confidence_map()
         depth_map = camera._retrieve_depth_map()
@@ -194,6 +224,7 @@ if __name__ == "__main__":
         rr_point_cloud = rr.Points3D(positions=point_cloud.points, colors=point_cloud.colors)
         rr.log("world/point_cloud", rr_point_cloud)
         rr.log("image", rr.Image(image_rgb).compress(jpeg_quality=90))
+        rr.log("image_right", rr.Image(image_right_rgb).compress(jpeg_quality=90))
         rr.log("depth_image", rr.Image(depth_image).compress(jpeg_quality=90))
         rr.log("depth_map", rr.DepthImage(depth_map))
         rr.log("confidence_map", rr.Image(confidence_map))
