@@ -113,9 +113,11 @@ class GraspHangingController(Controller):
             self._grasp_pose = None
             return
 
-        grasp_pose = get_manual_grasp_annotation(
+        grasp_info = get_manual_grasp_annotation(
             image_rgb, depth_map, point_cloud, self.station.camera_pose, camera.intrinsics_matrix(), log_to_rerun=True
         )
+        grasp_pose = grasp_info.grasp_pose
+
         self._grasp_pose = grasp_pose
 
         if grasp_pose is None:

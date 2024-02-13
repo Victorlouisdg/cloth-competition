@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Tuple
 
 import cv2
@@ -34,28 +35,41 @@ def top_down_camera_pose(height: float = 1.5) -> np.ndarray:
     return pose
 
 
-def grasp_hanging_cloth_pose(position: Vector3DType, approach_direction: Vector3DType) -> HomogeneousMatrixType:
+def grasp_hanging_cloth_pose(
+    position: Vector3DType, approach_direction: Vector3DType, grasp_depth: float = 0.0
+) -> HomogeneousMatrixType:
     """Create a pose for grasping a hanging cloth.
 
     Args:
         position: The position of the grasp.
         approach_direction: The direction the gripper should approach the grasp from.
+        grasp_depth: An additional forward (= Z) offset for the grasp to bring it deeper into the cloth.
 
     Returns:
         pose: The pose for the grasp.
     """
-    Z = approach_direction
+    Z = approach_direction / np.linalg.norm(approach_direction)
+    position_with_depth = position + grasp_depth * Z
 
     # Pointing gripper Y up or down leads to the gripper opening horizontally
     # I chose Y-down here because it's closer the other poses used in the controllers
-    Y = np.array([0, 0, -1])
+    Y = np.array([0, 0, -1])  # default Y
+
+    # Handle rare case where Z is parallel to default Y
+    if np.abs(np.dot(Y, Z)) > 0.99:
+        Y = np.array([-1, 0, 0])
+
     X = np.cross(Y, Z)
-    orientation = np.column_stack([X, Y, Z])
+    X = X / np.linalg.norm(X)  # Normalize X for the case where Y and Z were not perpendicular
+
+    # Recalculate Y to be guaranteed perpendicular to X and Z
+    Y = np.cross(Z, X)
+
     orientation = np.column_stack([X, Y, Z])
 
     pose = np.identity(4)
     pose[:3, :3] = orientation
-    pose[:3, 3] = position
+    pose[:3, 3] = position_with_depth
 
     return pose
 
@@ -116,9 +130,10 @@ def calculate_approach_direction_from_clicked_points(
     return approach_direction
 
 
-def calculate_grasp_pose_from_clicked_points(
+def calculate_grasp_pose_from_annotations(
     frontal_clicked_in_image: Tuple[int, int],
     topdown_clicked_in_image: Tuple[int, int] | None,
+    grasp_depth: float,
     depth_map: NumpyDepthMapType,
     camera_pose: HomogeneousMatrixType,
     camera_topdown_pose: HomogeneousMatrixType,
@@ -140,8 +155,20 @@ def calculate_grasp_pose_from_clicked_points(
     if topdown_clicked_in_image is not None:
         Z = calculate_approach_direction_from_clicked_points(p_W, topdown_clicked_in_image, X_W_VC, intrinsics)
 
-    grasp_pose = grasp_hanging_cloth_pose(p_W, Z)
+    grasp_pose = grasp_hanging_cloth_pose(p_W, Z, grasp_depth)
     return grasp_pose
+
+
+@dataclass
+class GraspAnnotationInfo:
+    """Some additional information about the grasp annotation e.g. for visualization."""
+
+    grasp_pose: HomogeneousMatrixType | None
+    clicked_point_frontal: Tuple[int, int] | None
+    clicked_point_topdown: Tuple[int, int] | None
+    grasp_depth: float
+    image_frontal: NumpyIntImageType
+    image_topdown: NumpyIntImageType
 
 
 def get_manual_grasp_annotation(  # noqa: C901
@@ -151,7 +178,7 @@ def get_manual_grasp_annotation(  # noqa: C901
     camera_pose: HomogeneousMatrixType,
     intrinsics: CameraIntrinsicsMatrixType,
     log_to_rerun: bool = False,
-) -> HomogeneousMatrixType | None:
+) -> GraspAnnotationInfo | None:
     """Manually annotate a grasp pose on a hanging piece of cloth.
 
     Args:
@@ -162,6 +189,7 @@ def get_manual_grasp_annotation(  # noqa: C901
         intrinsics: The camera intrinsics.
     """
     cyan = (255, 255, 0)
+    yellow = (0, 255, 255)
 
     window_frontal = "Grasp Annotation - Frontal view"
     window_topdown = "Grasp Annotation - Topdown view"
@@ -169,6 +197,8 @@ def get_manual_grasp_annotation(  # noqa: C901
     logger.info("[Grasp Annotation] - Usage:")
     logger.info("Click in the front view to set grasp location.")
     logger.info("Click in the topdown view to set the approach direction.")
+    logger.info("Press 'arrow up' to increase the grasp depth.")
+    logger.info("Press 'arrow down' to decrease the grasp depth.")
     logger.info("Press 'y' to confirm the grasp pose.")
     logger.info("Press 'b' to toggle blur in the topdown view.")
     logger.info("Press 'q' to quit.")
@@ -227,36 +257,65 @@ def get_manual_grasp_annotation(  # noqa: C901
     image_topdown = image_topdown_blurred
     blur_image = True
     grasp_pose = None
+    grasp_depth = 0.02
 
     while True:
         image_frontal_annotated = image_frontal.copy()
         image_topdown_annotated = image_topdown.copy()
 
+        if clicked_point[window_topdown] is not None:
+            cv2.circle(image_topdown_annotated, clicked_point[window_topdown], 5, cyan, 3, cv2.LINE_AA)
+
         if clicked_point[window_frontal] is not None:
-            grasp_pose = calculate_grasp_pose_from_clicked_points(
-                clicked_point[window_frontal], clicked_point[window_topdown], depth_map, X_W_C, X_W_VC, intrinsics
+            cv2.circle(image_frontal_annotated, clicked_point[window_frontal], 5, yellow, 3, cv2.LINE_AA)
+
+            grasp_pose = calculate_grasp_pose_from_annotations(
+                clicked_point[window_frontal],
+                clicked_point[window_topdown],
+                grasp_depth,
+                depth_map,
+                X_W_C,
+                X_W_VC,
+                intrinsics,
             )
 
             draw_pose(image_frontal_annotated, grasp_pose, intrinsics, X_W_C)
             draw_pose(image_topdown_annotated, grasp_pose, intrinsics, X_W_VC)
 
-            if clicked_point[window_topdown] is not None:
-                cv2.circle(image_topdown_annotated, clicked_point[window_topdown], 5, cyan, 3, cv2.LINE_AA)
-
             if log_to_rerun:
                 rr.log("world/grasp_pose", rr.Transform3D(translation=grasp_pose[:3, 3], mat3x3=grasp_pose[:3, :3]))
 
+        text = f"Grasp depth: {grasp_depth:.2f} m (Press d/f to change)"
+        cv2.putText(image_frontal_annotated, text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
+
         cv2.imshow(window_frontal, image_frontal_annotated)
         cv2.imshow(window_topdown, image_topdown_annotated)
-        key = cv2.waitKey(10)
-        if key == ord("q"):
+        key = cv2.waitKey(100)
+        logger.info(f"Pressed key: {key}")
+
+        grasp_annotation_info = GraspAnnotationInfo(
+            grasp_pose=grasp_pose,
+            clicked_point_frontal=clicked_point[window_frontal],
+            clicked_point_topdown=clicked_point[window_topdown],
+            grasp_depth=grasp_depth,
+            image_frontal=image_frontal_annotated.copy(),
+            image_topdown=image_topdown_annotated.copy(),
+        )
+
+        if key == ord("q") or key == ord("n"):
+            # Signal that the grasp annotation was aborted
+            grasp_pose = None
             cv2.destroyWindow(window_frontal)
             cv2.destroyWindow(window_topdown)
-            return None
+            return grasp_annotation_info
         if key == ord("y"):
             cv2.destroyWindow(window_frontal)
             cv2.destroyWindow(window_topdown)
-            return grasp_pose
+            return grasp_annotation_info
         if key == ord("b"):
             blur_image = not blur_image
             image_topdown = image_topdown_blurred if blur_image else image_topdown_sharp
+        if key == ord("d"):  # deeper into the cloth
+            grasp_depth += 0.01
+        if key == ord("f"):  # further away from the cloth
+            grasp_depth -= 0.01
