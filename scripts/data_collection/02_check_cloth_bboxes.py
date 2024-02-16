@@ -9,6 +9,10 @@ from typing import Dict, Tuple
 import cv2
 import numpy as np
 import rerun as rr
+from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera import (
+    MultiprocessStereoRGBDPublisher,
+    MultiprocessStereoRGBDReceiver,
+)
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_camera_toolkit.pinhole_operations.projection import project_points_to_image_plane
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
@@ -79,7 +83,25 @@ def rr_log_bboxes(bboxes: Dict[str, BoundingBox3DType], bbox_colors: Dict[str, T
 
 
 if __name__ == "__main__":
-    camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
+
+    camera_kwargs = {
+        "resolution": Zed2i.RESOLUTION_2K,
+        "depth_mode": Zed2i.NEURAL_DEPTH_MODE,
+        "fps": 15,
+    }
+    multiprocess = True
+
+    if multiprocess:
+
+        import multiprocessing
+
+        multiprocessing.set_start_method("spawn")
+
+        camera_publisher = MultiprocessStereoRGBDPublisher(Zed2i, camera_kwargs=camera_kwargs)
+        camera_publisher.start()
+        camera = MultiprocessStereoRGBDReceiver("camera")
+    else:
+        camera = Zed2i(**camera_kwargs)
 
     window_name = "Cloth BBoxes"
 
@@ -105,6 +127,8 @@ if __name__ == "__main__":
 
     while True:
         image_rgb, _, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, X_W_C)
+        confidence_map = camera._retrieve_confidence_map()
+        rr.log("confidence_map", rr.Image(confidence_map))
 
         rr_point_cloud = rr.Points3D(positions=point_cloud_filtered.points, colors=point_cloud_filtered.colors)
         rr.log("world/point_cloud", rr_point_cloud)
@@ -117,3 +141,8 @@ if __name__ == "__main__":
         key = cv2.waitKey(1)
         if key == ord("q"):
             break
+
+    if multiprocess:
+        camera._close_shared_memory()
+        camera_publisher.stop()
+        camera_publisher.join()

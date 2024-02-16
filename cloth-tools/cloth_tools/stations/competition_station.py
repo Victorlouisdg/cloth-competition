@@ -84,6 +84,8 @@ class CompetitionStation(DualArmStation):
 
             # Running the camera in a seperate process enables us to record videos even if the main process is blocking
             self.camera_publisher = MultiprocessStereoRGBDPublisher(Zed2i, camera_kwargs)
+            # self.camera_publisher.publish_depth_image = False
+
             self.camera_publisher.start()
             camera = MultiprocessStereoRGBDReceiver("camera")
         else:
@@ -119,13 +121,18 @@ class CompetitionStation(DualArmStation):
         diagram = self._diagram
         context = self._context
         arm_indices = self._arm_indices
-        home_joints_left = self.home_joints_left
-        home_joints_right = self.home_joints_right
+        self.home_joints_left
+        self.home_joints_right
+
+        # Publishing the current joint is purely for debugging. This way you can check in meshcat if the robot is
+        # mounted the same way as in the real world as in the simulation.
+        current_joints_left = dual_arm.left_manipulator.get_joint_configuration()
+        current_joints_right = dual_arm.right_manipulator.get_joint_configuration()
         plant = diagram.plant()
         plant_context = plant.GetMyContextFromRoot(context)
         arm_left_index, arm_right_index = arm_indices
-        plant.SetPositions(plant_context, arm_left_index, home_joints_left)
-        plant.SetPositions(plant_context, arm_right_index, home_joints_right)
+        plant.SetPositions(plant_context, arm_left_index, current_joints_left)
+        plant.SetPositions(plant_context, arm_right_index, current_joints_right)
         diagram.ForcedPublish(context)
 
         logger.info("CompetitionStation initialized.")

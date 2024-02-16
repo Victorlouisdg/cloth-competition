@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 
+from airo_camera_toolkit.cameras.multiprocess.multiprocess_video_recorder import MultiprocessVideoRecorder
 from airo_camera_toolkit.interfaces import StereoRGBDCamera
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, BBOX_CLOTH_ON_TABLE
@@ -74,6 +75,13 @@ if __name__ == "__main__":
         home_controller = HomeController(station)
         home_controller.execute(interactive=False)
 
+        sample_index = find_highest_suffix(dataset_dir, "sample") + 1
+        sample_dir = dataset_dir / f"sample_{sample_index:06d}"
+
+        video_path = str(sample_dir / f"episode_{sample_index:06d}.mp4")
+        video_recorder = MultiprocessVideoRecorder("camera", video_path)
+        video_recorder.start()
+
         # Start of new episode
         grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
         grasp_highest_controller.execute(interactive=True)
@@ -88,10 +96,8 @@ if __name__ == "__main__":
         logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
 
         # Save competition input data here
-        sample_index = find_highest_suffix(dataset_dir, "sample") + 1
-        sample_dir = dataset_dir / f"sample_{sample_index:06d}"
 
-        start_observation_dir = str(sample_dir / "start_observation")
+        start_observation_dir = str(sample_dir / "observation_start")
         start_observation = collect_observation(station)
         save_competition_observation(start_observation, start_observation_dir)
 
@@ -101,9 +107,12 @@ if __name__ == "__main__":
         stretch_controller = StretchController(station)
         stretch_controller.execute(interactive=True)
 
+        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
+        time.sleep(time_to_stop_swinging)
+
         # Save results here
-        result_observation_dir = str(sample_dir / "result_observation")
+        result_observation_dir = str(sample_dir / "observation_result")
         result_observation = collect_observation(station)
         save_competition_observation(result_observation, result_observation_dir)
 
-        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
+        video_recorder.stop()

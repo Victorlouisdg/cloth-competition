@@ -38,6 +38,15 @@ def load_camera_pose_in_left_and_right() -> Tuple[HomogeneousMatrixType, Homogen
     with open(Path(get_config_dir()) / "camera_pose_in_right.json", "r") as f:
         camera_pose_in_right = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
 
+    # Temporarily override
+    # camera_pose_in_left = Pose(
+    #     position_in_meters=Position(x=0.45, y=-1.3, z=0.9),
+    #     rotation_euler_xyz_in_radians=EulerAngles(roll=-2.0, pitch=0.0, yaw=0.0),
+    # ).as_homogeneous_matrix()
+    # camera_pose_in_right = Pose(
+    #     position_in_meters=Position(x=-0.45, y=-1.3, z=0.9),
+    #     rotation_euler_xyz_in_radians=EulerAngles(roll=-2.0, pitch=0.0, yaw=0.0),
+    # ).as_homogeneous_matrix()
     return camera_pose_in_left, camera_pose_in_right
 
 
