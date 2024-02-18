@@ -19,6 +19,7 @@ from airo_typing import (
 )
 from cloth_tools.visualization.opencv import draw_pose
 from loguru import logger
+from pydantic import BaseModel
 
 
 def top_down_camera_pose(height: float = 1.5) -> np.ndarray:
@@ -159,6 +160,27 @@ def calculate_grasp_pose_from_annotations(
     return grasp_pose
 
 
+def draw_line_to_point_in_world(
+    image: OpenCVIntImageType,
+    point_in_image: Tuple[int, int],
+    point_in_world: Vector3DType,
+    camera_pose: HomogeneousMatrixType,
+    intrinsics: CameraIntrinsicsMatrixType,
+    color: Tuple[int, int, int] = (0, 255, 0),
+) -> OpenCVIntImageType:
+    point_in_world_projected = project_points_to_image_plane(
+        transform_points(camera_pose, point_in_world), intrinsics
+    ).squeeze()
+    point_in_world_projected_int = tuple(np.rint(point_in_world_projected).astype(int))
+    cv2.line(image, point_in_image, point_in_world_projected_int, color, 1, cv2.LINE_AA)
+
+
+class GraspAnnotation(BaseModel):
+    clicked_point_frontal: Tuple[int, int] | None
+    clicked_point_topdown: Tuple[int, int] | None
+    grasp_depth: float
+
+
 @dataclass
 class GraspAnnotationInfo:
     """Some additional information about the grasp annotation e.g. for visualization."""
@@ -281,6 +303,11 @@ def get_manual_grasp_annotation(  # noqa: C901
 
             draw_pose(image_frontal_annotated, grasp_pose, intrinsics, X_W_C)
             draw_pose(image_topdown_annotated, grasp_pose, intrinsics, X_W_VC)
+
+            if clicked_point[window_topdown] is not None:
+                draw_line_to_point_in_world(
+                    image_topdown_annotated, clicked_point[window_topdown], grasp_pose[:3, 3], X_W_VC, intrinsics, cyan
+                )
 
             if log_to_rerun:
                 rr.log("world/grasp_pose", rr.Transform3D(translation=grasp_pose[:3, 3], mat3x3=grasp_pose[:3, :3]))
