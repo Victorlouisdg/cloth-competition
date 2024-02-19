@@ -86,7 +86,7 @@ if __name__ == "__main__":
         sample_dir = dataset_dir / f"sample_{sample_index:06d}"
         sample_dir.mkdir(parents=True, exist_ok=True)
 
-        video_path = str(sample_dir / f"episode_{sample_index:06d}.mp4")
+        video_path = str(sample_dir / "episode.mp4")
         video_recorder = MultiprocessVideoRecorder("camera", video_path)
         video_recorder.start()
 
