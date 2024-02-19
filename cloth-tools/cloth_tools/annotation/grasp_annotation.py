@@ -1,3 +1,5 @@
+import json
+import os
 from dataclasses import dataclass
 from typing import Tuple
 
@@ -7,6 +9,7 @@ from airo_camera_toolkit.pinhole_operations.projection import project_points_to_
 from airo_camera_toolkit.pinhole_operations.unprojection import unproject_onto_depth_values
 from airo_camera_toolkit.point_clouds.conversions import point_cloud_to_open3d
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from airo_dataset_tools.data_parsers.pose import Pose
 from airo_spatial_algebra import transform_points
 from airo_typing import (
     CameraIntrinsicsMatrixType,
@@ -175,12 +178,6 @@ def draw_line_to_point_in_world(
     cv2.line(image, point_in_image, point_in_world_projected_int, color, 1, cv2.LINE_AA)
 
 
-class GraspAnnotation(BaseModel):
-    clicked_point_frontal: Tuple[int, int] | None
-    clicked_point_topdown: Tuple[int, int] | None
-    grasp_depth: float
-
-
 @dataclass
 class GraspAnnotationInfo:
     """Some additional information about the grasp annotation e.g. for visualization."""
@@ -345,3 +342,36 @@ def get_manual_grasp_annotation(  # noqa: C901
             grasp_depth += 0.01
         if key == ord("f"):  # further away from the cloth
             grasp_depth -= 0.01
+
+
+class GraspAnnotation(BaseModel):
+    clicked_point_frontal: Tuple[int, int]
+    clicked_point_topdown: Tuple[int, int]
+    grasp_depth: float
+
+
+def save_grasp_info(dir: str, grasp_info: GraspAnnotationInfo):
+
+    os.makedirs(dir, exist_ok=True)
+
+    grasp_pose_file = os.path.join(dir, "grasp_pose.json")
+
+    with open(grasp_pose_file, "w") as f:
+        grasp_pose_model = Pose.from_homogeneous_matrix(grasp_info.grasp_pose)
+        json.dump(grasp_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    grasp_annotation_file = os.path.join(dir, "grasp_annotation.json")
+    grasp_annotation = GraspAnnotation(
+        clicked_point_frontal=grasp_info.clicked_point_frontal,
+        clicked_point_topdown=grasp_info.clicked_point_topdown,
+        grasp_depth=grasp_info.grasp_depth,
+    )
+
+    with open(grasp_annotation_file, "w") as f:
+        json.dump(grasp_annotation.model_dump(exclude_none=True), f, indent=4)
+
+    # Save the two images with the grasp visualized
+    grasp_frontal_image_file = os.path.join(dir, "frontal_image_grasp.jpg")
+    grasp_topdown_image_file = os.path.join(dir, "topdown_image_grasp.jpg")
+    cv2.imwrite(grasp_frontal_image_file, grasp_info.image_frontal)
+    cv2.imwrite(grasp_topdown_image_file, grasp_info.image_topdown)

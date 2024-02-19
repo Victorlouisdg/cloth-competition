@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import numpy as np
 import open3d as o3d
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.utils.image_converter import ImageConverter
@@ -53,7 +54,7 @@ COMPETITION_OBSERVATION_FILENAMES = {
     "image_right": "image_right.png",
     "depth_map": "depth_map.tiff",
     "point_cloud": "point_cloud.ply",
-    "depth_image": "depth_image.png",  # change to jpg because it's only intended for visualization
+    "depth_image": "depth_image.jpg",
     "confidence_map": "confidence_map.tiff",
     "camera_pose_in_world": "camera_pose_in_world.json",
     "arm_left_pose_in_world": "arm_left_pose_in_world.json",
@@ -85,6 +86,11 @@ def save_competition_observation(observation: CompetitionObservation, observatio
     cv2.imwrite(filepaths["depth_map"], observation.depth_map)
 
     pcd = point_cloud_to_open3d(observation.point_cloud)
+
+    if pcd.point.colors.numpy().dtype != np.uint8:
+        logger.warning("Point cloud colors were not uint8, converting to uint8.")
+        pcd.point.colors = o3d.utility.Vector3dVector((pcd.point.colors.numpy() * 255.0).astype(np.uint8))
+
     o3d.t.io.write_point_cloud(filepaths["point_cloud"], pcd)
 
     cv2.imwrite(filepaths["confidence_map"], observation.confidence_map)

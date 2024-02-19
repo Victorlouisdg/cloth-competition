@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import cv2
@@ -6,7 +7,7 @@ import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_typing import BoundingBox3DType, HomogeneousMatrixType, OpenCVIntImageType, PointCloud
-from cloth_tools.annotation.grasp_annotation import get_manual_grasp_annotation
+from cloth_tools.annotation.grasp_annotation import get_manual_grasp_annotation, save_grasp_info
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.grasp_lowest_controller import create_cloth_obstacle_planner
@@ -32,9 +33,11 @@ class GraspHangingController(Controller):
     Currently always uses the left arm to grasp.
     """
 
-    def __init__(self, station: DualArmStation, bbox: BoundingBox3DType):
+    def __init__(self, station: DualArmStation, bbox: BoundingBox3DType, sample_dir: str):
         self.station = station
         self.bbox = bbox
+
+        self.sample_dir = sample_dir  # Quick fix for data collection, saving grasp will be done elsewhere later
 
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
@@ -118,6 +121,7 @@ class GraspHangingController(Controller):
         )
         grasp_pose = grasp_info.grasp_pose
 
+        self._grasp_info = grasp_info  # Save for data collection
         self._grasp_pose = grasp_pose
 
         if grasp_pose is None:
@@ -178,6 +182,12 @@ class GraspHangingController(Controller):
             return
 
     def execute_grasp(self) -> None:
+        # Save the grasp we are about to execute
+        sample_dir = self.sample_dir
+        grasp_info = self._grasp_info
+        grasp_dir = Path(sample_dir) / "grasp"
+        save_grasp_info(str(grasp_dir), grasp_info)
+
         dual_arm = self.station.dual_arm
 
         # Execute the path to the pregrasp pose

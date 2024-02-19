@@ -202,7 +202,7 @@ class StretchController(Controller):
 
     def execute_plan(self) -> None:
         if not self._can_execute():
-            logger.warn(f"{self.__class__.__name__}: not executing because the plan is not complete.")
+            logger.warning(f"{self.__class__.__name__}: not executing because the plan is not complete.")
             return
 
         self.execute_stretch()

@@ -55,6 +55,11 @@ def collect_observation(station: CompetitionStation) -> str:
 
 
 if __name__ == "__main__":
+    import os
+
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
     station = CompetitionStation()
 
     dual_arm = station.dual_arm
@@ -71,12 +76,15 @@ if __name__ == "__main__":
     dataset_dir = Path(ensure_dataset_dir("dataset_dev"))
 
     while True:
+        start_time = time.time()
+
         # Move the arms to their home positions
         home_controller = HomeController(station)
         home_controller.execute(interactive=False)
 
         sample_index = find_highest_suffix(dataset_dir, "sample") + 1
         sample_dir = dataset_dir / f"sample_{sample_index:06d}"
+        sample_dir.mkdir(parents=True, exist_ok=True)
 
         video_path = str(sample_dir / f"episode_{sample_index:06d}.mp4")
         video_recorder = MultiprocessVideoRecorder("camera", video_path)
@@ -97,11 +105,11 @@ if __name__ == "__main__":
 
         # Save competition input data here
 
-        start_observation_dir = str(sample_dir / "observation_start")
-        start_observation = collect_observation(station)
-        save_competition_observation(start_observation, start_observation_dir)
+        observation_start_dir = str(sample_dir / "observation_start")
+        observation_start = collect_observation(station)
+        save_competition_observation(observation_start, observation_start_dir)
 
-        grasp_hanging_controller = GraspHangingController(station, BBOX_CLOTH_IN_THE_AIR)
+        grasp_hanging_controller = GraspHangingController(station, BBOX_CLOTH_IN_THE_AIR, sample_dir)
         grasp_hanging_controller.execute(interactive=True)
 
         stretch_controller = StretchController(station)
@@ -111,8 +119,10 @@ if __name__ == "__main__":
         time.sleep(time_to_stop_swinging)
 
         # Save results here
-        result_observation_dir = str(sample_dir / "observation_result")
-        result_observation = collect_observation(station)
-        save_competition_observation(result_observation, result_observation_dir)
+        observation_result_dir = str(sample_dir / "observation_result")
+        observation_result = collect_observation(station)
+        save_competition_observation(observation_result, observation_result_dir)
 
         video_recorder.stop()
+
+        logger.info(f"Time taken: {time.time() - start_time:.2f} seconds")
