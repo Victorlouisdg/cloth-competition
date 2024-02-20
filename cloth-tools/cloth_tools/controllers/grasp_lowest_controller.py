@@ -421,7 +421,7 @@ class GraspLowestController(Controller):
             _, key = self.visualize_plan()
             if key == ord("p"):
                 key = cv2.waitKey(0)
-            elif key == ord("y"):
+            elif key == ord("y") and self._can_execute():
                 self.execute_plan()
                 return
             elif key == ord("n"):

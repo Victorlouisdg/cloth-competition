@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Any, Optional, Tuple
 
 import cv2
+import numpy as np
 import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
@@ -33,7 +34,9 @@ class GraspHangingController(Controller):
     Currently always uses the left arm to grasp.
     """
 
-    def __init__(self, station: DualArmStation, bbox: BoundingBox3DType, sample_dir: str):
+    GOOD_GRASP_JOINTS_RIGHT_0 = np.deg2rad([-124, -124, -75.5, -164, 56, 180])  # recorded in freedrive
+
+    def __init__(self, station: DualArmStation, bbox: BoundingBox3DType, sample_dir: str = None):
         self.station = station
         self.bbox = bbox
 
@@ -156,7 +159,8 @@ class GraspHangingController(Controller):
                 None,
                 pregrasp_pose,
                 desirable_goal_configurations_right=[
-                    self.station.home_joints_right
+                    self.station.home_joints_right,
+                    self.GOOD_GRASP_JOINTS_RIGHT_0,
                 ],  # Try to avoid the shoulder from pointing towards the camera
             )
             self._path_pregrasp = path_pregrasp
@@ -182,11 +186,12 @@ class GraspHangingController(Controller):
             return
 
     def execute_grasp(self) -> None:
-        # Save the grasp we are about to execute
-        sample_dir = self.sample_dir
-        grasp_info = self._grasp_info
-        grasp_dir = Path(sample_dir) / "grasp"
-        save_grasp_info(str(grasp_dir), grasp_info)
+        if self.sample_dir is not None:
+            # Save the grasp we are about to execute
+            sample_dir = self.sample_dir
+            grasp_info = self._grasp_info
+            grasp_dir = Path(sample_dir) / "grasp"
+            save_grasp_info(str(grasp_dir), grasp_info)
 
         dual_arm = self.station.dual_arm
 
@@ -311,7 +316,7 @@ class GraspHangingController(Controller):
             _, key = self.visualize_plan()
             if key == ord("p"):
                 key = cv2.waitKey(0)
-            elif key == ord("y"):
+            elif key == ord("y") and self._can_execute():
                 self.execute_plan()
                 return
             elif key == ord("n"):

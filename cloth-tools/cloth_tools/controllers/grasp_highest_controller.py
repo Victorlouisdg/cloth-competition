@@ -283,7 +283,7 @@ class GraspHighestController(Controller):
         while True:
             self.plan()
             _, key = self.visualize_plan()
-            if key == ord("y"):
+            if key == ord("y") and self._can_execute():
                 self.execute_plan()
                 return
             elif key == ord("n"):
