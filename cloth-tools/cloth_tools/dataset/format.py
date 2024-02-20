@@ -1,8 +1,11 @@
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List
 
 import cv2
+import numpy as np
 import open3d as o3d
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.utils.image_converter import ImageConverter
@@ -12,93 +15,152 @@ from airo_typing import (
     CameraExtrinsicMatrixType,
     CameraIntrinsicsMatrixType,
     CameraResolutionType,
+    HomogeneousMatrixType,
+    JointConfigurationType,
     NumpyDepthMapType,
     NumpyIntImageType,
     PointCloud,
 )
+from loguru import logger
+from pydantic import BaseModel
+
+
+class JointConfigurationModel(BaseModel):
+    values: List[float]
 
 
 @dataclass
-class CompetitionInputSample:
+class CompetitionObservation:
+    # Data
     image_left: NumpyIntImageType
     image_right: NumpyIntImageType
-    depth_map: NumpyDepthMapType
-    point_cloud: PointCloud
-    depth_image: NumpyIntImageType | None  # Optional depth image for visualization
-    confidence_map: NumpyDepthMapType | None  # Confidence of the depth map as returned by the ZED SDK
-    camera_pose: CameraExtrinsicMatrixType
+    depth_map: NumpyDepthMapType  # Depth should be aligned with the left image
+    point_cloud: PointCloud  # Expressed in the world frame
+    depth_image: NumpyIntImageType  # Depth image for visualization
+    confidence_map: NumpyDepthMapType  # Confidence of the depth map as returned by the ZED SDK
+
+    # Poses
+    camera_pose_in_world: CameraExtrinsicMatrixType
+    arm_left_pose_in_world: HomogeneousMatrixType
+    arm_right_pose_in_world: HomogeneousMatrixType
+    arm_left_joints: JointConfigurationType
+    arm_right_joints: JointConfigurationType
+    arm_left_tcp_pose_in_world: HomogeneousMatrixType
+    arm_right_tcp_pose_in_world: HomogeneousMatrixType
+    right_camera_pose_in_left_camera: HomogeneousMatrixType
+
+    # Camera intrinsics
     camera_intrinsics: CameraIntrinsicsMatrixType
     camera_resolution: CameraResolutionType
 
 
-def save_competition_input_sample(sample: CompetitionInputSample, dataset_dir: str, sample_index: int) -> None:
-    sample_dir = Path(dataset_dir) / f"sample_{sample_index:06d}"
-    sample_dir.mkdir(parents=True, exist_ok=True)
-    filenames = competition_input_sample_filenames(sample_index)
-    filepaths = {key: str(sample_dir / filename) for key, filename in filenames.items()}
+# We put these in a dictionary so both the saving and loading code can use the same file names and extensions.
+COMPETITION_OBSERVATION_FILENAMES = {
+    "image_left": "image_left.png",
+    "image_right": "image_right.png",
+    "depth_map": "depth_map.tiff",
+    "point_cloud": "point_cloud.ply",
+    "depth_image": "depth_image.jpg",
+    "confidence_map": "confidence_map.tiff",
+    "camera_pose_in_world": "camera_pose_in_world.json",
+    "arm_left_pose_in_world": "arm_left_pose_in_world.json",
+    "arm_right_pose_in_world": "arm_right_pose_in_world.json",
+    "arm_left_joints": "arm_left_joints.json",
+    "arm_right_joints": "arm_right_joints.json",
+    "arm_left_tcp_pose_in_world": "arm_left_tcp_pose_in_world.json",
+    "arm_right_tcp_pose_in_world": "arm_right_tcp_pose_in_world.json",
+    "right_camera_pose_in_left_camera": "right_camera_pose_in_left_camera.json",
+    "camera_intrinsics": "camera_intrinsics.json",  # Resolution is saved together with the intrinsics
+}
+
+
+def save_competition_observation(observation: CompetitionObservation, observation_dir: str) -> None:
+    os.makedirs(observation_dir, exist_ok=True)
+
+    # Turn filenames into filepaths
+    filepaths = {
+        key: str(Path(observation_dir) / filename) for key, filename in COMPETITION_OBSERVATION_FILENAMES.items()
+    }
 
     # Convert images from RGB to BGR
-    image_left = ImageConverter.from_numpy_int_format(sample.image_left).image_in_opencv_format
-    image_right = ImageConverter.from_numpy_int_format(sample.image_right).image_in_opencv_format
+    image_left = ImageConverter.from_numpy_int_format(observation.image_left).image_in_opencv_format
+    image_right = ImageConverter.from_numpy_int_format(observation.image_right).image_in_opencv_format
+    depth_image = ImageConverter.from_numpy_int_format(observation.depth_image).image_in_opencv_format
 
     cv2.imwrite(filepaths["image_left"], image_left)
     cv2.imwrite(filepaths["image_right"], image_right)
-    cv2.imwrite(filepaths["depth_map"], sample.depth_map)
+    cv2.imwrite(filepaths["depth_image"], depth_image)
+    cv2.imwrite(filepaths["depth_map"], observation.depth_map)
+    cv2.imwrite(filepaths["confidence_map"], observation.confidence_map)
 
-    if sample.confidence_map is not None:
-        cv2.imwrite(filepaths["confidence_map"], sample.confidence_map)
+    pcd = point_cloud_to_open3d(observation.point_cloud)
 
-    if sample.depth_image is not None:
-        depth_image = ImageConverter.from_numpy_int_format(sample.depth_image).image_in_opencv_format
-        cv2.imwrite(filepaths["depth_image"], depth_image)
+    if pcd.point.colors.numpy().dtype != np.uint8:
+        logger.warning("Point cloud colors were not uint8, converting to uint8.")
+        pcd.point.colors = o3d.utility.Vector3dVector((pcd.point.colors.numpy() * 255.0).astype(np.uint8))
 
-    with open(filepaths["camera_intrinsics"], "w") as f:
-        json.dump(
-            CameraIntrinsics.from_matrix_and_resolution(sample.camera_intrinsics, sample.camera_resolution).model_dump(
-                exclude_none=True
-            ),
-            f,
-            indent=4,
-        )
-
-    with open(filepaths["camera_pose"], "w") as f:
-        json.dump(
-            Pose.from_homogeneous_matrix(sample.camera_pose).model_dump(exclude_none=True),
-            f,
-            indent=4,
-        )
-
-    pcd = point_cloud_to_open3d(sample.point_cloud)
     o3d.t.io.write_point_cloud(filepaths["point_cloud"], pcd)
 
+    with open(filepaths["camera_intrinsics"], "w") as f:
+        intrinsics_model_left = CameraIntrinsics.from_matrix_and_resolution(
+            observation.camera_intrinsics, observation.camera_resolution
+        )
+        json.dump(intrinsics_model_left.model_dump(exclude_none=True), f, indent=4)
 
-def load_competition_input_sample(dataset_dir: str, sample_index: int) -> CompetitionInputSample:
-    """Loads a competition input sample from a directory.
+    with open(filepaths["camera_pose_in_world"], "w") as f:
+        camera_pose_model = Pose.from_homogeneous_matrix(observation.camera_pose_in_world)
+        json.dump(camera_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["arm_left_pose_in_world"], "w") as f:
+        arm_left_pose_model = Pose.from_homogeneous_matrix(observation.arm_left_pose_in_world)
+        json.dump(arm_left_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["arm_right_pose_in_world"], "w") as f:
+        arm_right_pose_model = Pose.from_homogeneous_matrix(observation.arm_right_pose_in_world)
+        json.dump(arm_right_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["arm_left_joints"], "w") as f:
+        joints_model = JointConfigurationModel(values=list(observation.arm_left_joints))
+        json.dump(joints_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["arm_right_joints"], "w") as f:
+        joints_model = JointConfigurationModel(values=list(observation.arm_right_joints))
+        json.dump(joints_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["arm_left_tcp_pose_in_world"], "w") as f:
+        arm_left_tcp_pose_model = Pose.from_homogeneous_matrix(observation.arm_left_tcp_pose_in_world)
+        json.dump(arm_left_tcp_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["arm_right_tcp_pose_in_world"], "w") as f:
+        arm_right_tcp_pose_model = Pose.from_homogeneous_matrix(observation.arm_right_tcp_pose_in_world)
+        json.dump(arm_right_tcp_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["right_camera_pose_in_left_camera"], "w") as f:
+        right_camera_pose_model = Pose.from_homogeneous_matrix(observation.right_camera_pose_in_left_camera)
+        json.dump(right_camera_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    logger.info(f"Saved observation to {observation_dir}")
+
+
+def load_competition_observation(observation_dir: str) -> CompetitionObservation:
+    """Loads a competition observation from a directory.
 
     Args:
-        dataset_dir: The directory containing the sample directory.
-        sample_index: The index of the sample, must be unique per dataset.
+        observation_dir: The directory containing the observation files.
 
     Returns:
-        A CompetitionInputSample instance.
+        A CompetitionObservation instance.
     """
-    sample_dir = Path(dataset_dir) / f"sample_{sample_index:06d}"
-    filenames = competition_input_sample_filenames(sample_index)
-    filepaths = {key: str(sample_dir / filename) for key, filename in filenames.items()}
+    # Turn filenames into filepaths
+    filepaths = {
+        key: str(Path(observation_dir) / filename) for key, filename in COMPETITION_OBSERVATION_FILENAMES.items()
+    }
 
     image_left = cv2.imread(filepaths["image_left"])
     image_right = cv2.imread(filepaths["image_right"])
-    depth_map = cv2.imread(filepaths["depth_map"], cv2.IMREAD_ANYDEPTH)
     depth_image = cv2.imread(filepaths["depth_image"])
+    depth_map = cv2.imread(filepaths["depth_map"], cv2.IMREAD_ANYDEPTH)
     confidence_map = cv2.imread(filepaths["confidence_map"], cv2.IMREAD_ANYDEPTH)
-
-    with open(filepaths["camera_pose"], "r") as f:
-        camera_pose = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
-
-    with open(filepaths["camera_intrinsics"], "r") as f:
-        intrinsics_model = CameraIntrinsics.model_validate_json(f.read())
-        camera_instrinsics = intrinsics_model.as_matrix()
-        camera_resolution = intrinsics_model.image_resolution.as_tuple()
 
     # Convert images from BGR to RGB
     image_left = ImageConverter.from_opencv_format(image_left).image_in_numpy_int_format
@@ -107,43 +169,53 @@ def load_competition_input_sample(dataset_dir: str, sample_index: int) -> Compet
         depth_image
     ).image_in_numpy_int_format  # in case it's not grayscale
 
+    with open(filepaths["camera_pose_in_world"], "r") as f:
+        camera_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["arm_left_pose_in_world"], "r") as f:
+        arm_left_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["arm_right_pose_in_world"], "r") as f:
+        arm_right_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["arm_left_joints"], "r") as f:
+        arm_left_joints = np.array(JointConfigurationModel.model_validate_json(f.read()).values)
+
+    with open(filepaths["arm_right_joints"], "r") as f:
+        arm_right_joints = np.array(JointConfigurationModel.model_validate_json(f.read()).values)
+
+    with open(filepaths["arm_left_tcp_pose_in_world"], "r") as f:
+        arm_left_tcp_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["arm_right_tcp_pose_in_world"], "r") as f:
+        arm_right_tcp_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["right_camera_pose_in_left_camera"], "r") as f:
+        right_camera_pose_in_left_camera = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+    with open(filepaths["camera_intrinsics"], "r") as f:
+        intrinsics_model = CameraIntrinsics.model_validate_json(f.read())
+        camera_intrinsics = intrinsics_model.as_matrix()
+        camera_resolution = intrinsics_model.image_resolution.as_tuple()
+
     pcd = o3d.t.io.read_point_cloud(filepaths["point_cloud"])
     point_cloud = open3d_to_point_cloud(pcd)
 
-    return CompetitionInputSample(
+    return CompetitionObservation(
         image_left=image_left,
         image_right=image_right,
         depth_map=depth_map,
         point_cloud=point_cloud,
         depth_image=depth_image,
         confidence_map=confidence_map,
-        camera_pose=camera_pose,
-        camera_intrinsics=camera_instrinsics,
+        camera_pose_in_world=camera_pose_in_world,
+        arm_left_pose_in_world=arm_left_pose_in_world,
+        arm_right_pose_in_world=arm_right_pose_in_world,
+        arm_left_joints=arm_left_joints,
+        arm_right_joints=arm_right_joints,
+        arm_left_tcp_pose_in_world=arm_left_tcp_pose_in_world,
+        arm_right_tcp_pose_in_world=arm_right_tcp_pose_in_world,
+        right_camera_pose_in_left_camera=right_camera_pose_in_left_camera,
+        camera_intrinsics=camera_intrinsics,
         camera_resolution=camera_resolution,
     )
-
-
-def competition_input_sample_filenames(sample_index: int) -> dict[str, str]:
-    """Returns a dictionary of filenames for a given grasp index. Useful when collecting additional data.
-    The keys are the same as the fields of the corresponding dataclass and the values are the file names.
-    The data that is different for each grasp is suffixed with the zero-padded grasp index.
-
-    Args:
-        sample_index: The index of the sample, must be unique per dataset.
-
-    Returns:
-        A dictionary of filenames.
-    """
-    sample_index_padded = f"{sample_index:06d}"
-
-    return {
-        "image_left": f"image_left_{sample_index_padded}.png",
-        "image_right": f"image_right_{sample_index_padded}.png",
-        "depth_map": f"depth_map_{sample_index_padded}.tiff",
-        "point_cloud": f"point_cloud_{sample_index_padded}.ply",
-        "depth_image": f"depth_image_{sample_index_padded}.png",
-        "confidence_map": f"confidence_map_{sample_index_padded}.tiff",
-        "camera_pose": "camera_pose.json",
-        "camera_intrinsics": "camera_intrinsics.json",
-        "camera_resolution": "camera_resolution.json",
-    }

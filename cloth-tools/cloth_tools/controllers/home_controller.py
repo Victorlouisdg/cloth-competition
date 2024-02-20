@@ -1,8 +1,8 @@
 import sys
 
 from cloth_tools.controllers.controller import Controller
-from cloth_tools.drake.visualization import publish_dual_arm_joint_path
-from cloth_tools.path.execution import calculate_dual_path_duration, execute_dual_arm_joint_path
+from cloth_tools.drake.visualization import publish_dual_arm_trajectory
+from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.stations.competition_station import CompetitionStation
 from loguru import logger
 
@@ -26,6 +26,11 @@ class HomeController(Controller):
         self.open_left_gripper = open_left_gripper
         self.open_right_gripper = open_right_gripper
 
+        # Attributes set by plan()
+        self._path = None
+        self._joint_trajectory = None
+        self._time_trajectory = None
+
     def plan(self) -> None:
         dual_arm = self.station.dual_arm
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
@@ -45,12 +50,21 @@ class HomeController(Controller):
         )
         self._path = path
 
+        joint_trajectory, time_trajectory = time_parametrize_toppra(path, self.station._diagram.plant())
+
+        self._joint_trajectory = joint_trajectory
+        self._time_trajectory = time_trajectory
+
     def visualize_plan(self) -> None:
-        path = self._path
         station = self.station
-        duration = calculate_dual_path_duration(path)
-        publish_dual_arm_joint_path(
-            path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
+
+        publish_dual_arm_trajectory(
+            self._joint_trajectory,
+            self._time_trajectory,
+            station._meshcat,
+            station._diagram,
+            station._context,
+            *station._arm_indices,
         )
 
     def execute_plan(self) -> None:
@@ -59,7 +73,7 @@ class HomeController(Controller):
             return
 
         dual_arm = self.station.dual_arm
-        path = self._path
+        self._path
 
         assert dual_arm.left_manipulator.gripper is not None
         assert dual_arm.right_manipulator.gripper is not None
@@ -73,7 +87,7 @@ class HomeController(Controller):
         if self.open_right_gripper:
             right_opened.wait()
 
-        execute_dual_arm_joint_path(dual_arm, path)
+        execute_dual_arm_trajectory(dual_arm, self._joint_trajectory, self._time_trajectory)
 
     def execute_interactive(self) -> None:
         while True:

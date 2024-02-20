@@ -19,8 +19,9 @@ from airo_typing import (
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.home_controller import HomeController
-from cloth_tools.drake.visualization import publish_dual_arm_joint_path
-from cloth_tools.path.execution import calculate_dual_path_duration, execute_dual_arm_joint_path
+from cloth_tools.drake.visualization import publish_dual_arm_trajectory
+from cloth_tools.motion_blur_detector import MotionBlurDetector
+from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point
 from cloth_tools.stations.competition_station import CompetitionStation
@@ -29,6 +30,7 @@ from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards
 from linen.geometry.orientation import top_down_orientation
 from loguru import logger
+from pydrake.trajectories import Trajectory
 
 
 def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0.05) -> HomogeneousMatrixType:
@@ -55,7 +57,7 @@ def highest_point_grasp_pose(highest_point: Vector3DType, grasp_depth: float = 0
 def hang_in_the_air_tcp_orientation(left: bool) -> RotationMatrixType:
     gripper_forward_direction = np.array([0, -1, 0]) if left else np.array([0, 1, 0])
     Z = gripper_forward_direction / np.linalg.norm(gripper_forward_direction)
-    X = np.array([0, 0, -1])
+    X = np.array([0, 0, 1]) if left else np.array([0, 0, -1])
     Y = np.cross(Z, X)
     return np.column_stack([X, Y, Z])
 
@@ -92,8 +94,6 @@ class GraspHighestController(Controller):
         self.station = station
         self.bbox = bbox
 
-        self.joint_speed = 1.0  # rad/s
-
         # Attributes that will be set in plan()
         self._image: Optional[OpenCVIntImageType] = None
         self._grasp_pose: Optional[HomogeneousMatrixType] = None
@@ -102,6 +102,11 @@ class GraspHighestController(Controller):
         self._highest_point: Optional[Vector3DType] = None
         self._path_pregrasp: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
         self._path_hang: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
+        self._hang_tcp_pose: Optional[HomogeneousMatrixType] = None
+        self._trajectory_pregrasp: Optional[Trajectory] = None
+        self._time_trajectory_pregrasp: Optional[Trajectory] = None
+        self._trajectory_hang: Optional[Trajectory] = None
+        self._time_trajectory_hang: Optional[Trajectory] = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -125,24 +130,24 @@ class GraspHighestController(Controller):
         assert dual_arm.right_manipulator.gripper is not None  # For mypy
 
         # Execute the path to the pregrasp pose
-        execute_dual_arm_joint_path(dual_arm, self._path_pregrasp, self.joint_speed)
+        execute_dual_arm_trajectory(dual_arm, self._trajectory_pregrasp, self._time_trajectory_pregrasp)
 
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(None, grasp_pose, linear_speed=0.2).wait()
         dual_arm.right_manipulator.gripper.close().wait()
         dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose, linear_speed=0.2).wait()
 
-        # Hang the cloth in the air
-        execute_dual_arm_joint_path(dual_arm, self._path_hang, self.joint_speed)
-
-        # dual_arm.right_manipulator.move_to_joint_configuration(self.hang_joints, joint_speed=0.3).wait()
+        # Hang the cloth in the air (do this a bit slower to limit the cloth swinging)
+        execute_dual_arm_trajectory(dual_arm, self._trajectory_hang, self._time_trajectory_hang)
 
     def plan(self) -> None:
+        logger.info(f"{self.__class__.__name__}: Creating new plan.")
+
         camera = self.station.camera
         camera_pose = self.station.camera_pose
 
         time.sleep(1.0)  # without this sleep I've noticed motion blur on the images e.g. is the cloth has just fallen
-        image_rgb, point_cloud = get_image_and_filtered_point_cloud(camera, camera_pose)
+        image_rgb, _, point_cloud = get_image_and_filtered_point_cloud(camera, camera_pose)
         image = ImageConverter.from_numpy_int_format(image_rgb).image_in_opencv_format
 
         self._image = image
@@ -158,28 +163,48 @@ class GraspHighestController(Controller):
         highest_point_ = highest_point(point_cloud_cropped.points)
         grasp_pose = highest_point_grasp_pose(highest_point_)
 
+        logger.info(f"{self.__class__.__name__}: Found highest point in bbox at {highest_point_}.")
+
         self._highest_point = highest_point_
         self._grasp_pose = grasp_pose
 
         pregrasp_pose = move_pose_backwards(grasp_pose, 0.1)
         self._pregrasp_pose = pregrasp_pose
 
+        logger.info(f"{self.__class__.__name__}: Planning from start joints to pregrasp pose.")
+
         planner = self.station.planner
         dual_arm = self.station.dual_arm
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
-        path = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
-        self._path_pregrasp = path
+        path_pregrasp = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
+        self._path_pregrasp = path_pregrasp
 
-        # plan an additional path from the pregrasp joints to the hang joints
+        if path_pregrasp is None:
+            return
+
+        trajectory_pregrasp, time_trajectory_pregrasp = time_parametrize_toppra(
+            path_pregrasp, self.station._diagram.plant()
+        )
+        self._trajectory_pregrasp = trajectory_pregrasp
+        self._time_trajectory_pregrasp = time_trajectory_pregrasp
+
+        logger.info(f"{self.__class__.__name__}: Planning from pregrasp pose to hang pose.")
+
         # we operate under the assumption that the after the grasp the robot is back at the pregrasp pose with the same joint config
-        pregrasp_joints_right = path[-1][1]
+        pregrasp_joints_right = path_pregrasp[-1][1]
 
         # Warning: only implemented for right arm at the moment, when implementing for left arm, change args in plan_()
         self._hang_tcp_pose = hang_in_the_air_tcp_pose(left=False)
         path_hang = planner.plan_to_tcp_pose(start_joints_left, pregrasp_joints_right, None, self._hang_tcp_pose)
-
         self._path_hang = path_hang
+
+        # Lower joint acceleration limit to avoid swinging
+        trajectory_hang, time_trajectory_hang = time_parametrize_toppra(
+            path_hang, self.station._diagram.plant(), joint_acceleration_limit=0.5
+        )
+        self._trajectory_hang = trajectory_hang
+        self._time_trajectory_hang = time_trajectory_hang
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
@@ -218,11 +243,17 @@ class GraspHighestController(Controller):
             rr.log("world/hang_tcp_pose", rr_hang_tcp_pose)
 
         if self._path_pregrasp is not None:
-            path = self._path_pregrasp
             station = self.station
-            duration = calculate_dual_path_duration(path, self.joint_speed)
-            publish_dual_arm_joint_path(
-                path, duration, station._meshcat, station._diagram, station._context, *station._arm_indices
+            trajectory = self._trajectory_pregrasp
+            time_trajectory = self._time_trajectory_pregrasp
+
+            publish_dual_arm_trajectory(
+                trajectory,
+                time_trajectory,
+                station._meshcat,
+                station._diagram,
+                station._context,
+                *station._arm_indices,
             )
             # TODO find a way to also publish the hang path, maybe just append it?
 
@@ -253,7 +284,7 @@ class GraspHighestController(Controller):
         while True:
             self.plan()
             _, key = self.visualize_plan()
-            if key == ord("y"):
+            if key == ord("y") and self._can_execute():
                 self.execute_plan()
                 return
             elif key == ord("n"):
@@ -273,6 +304,9 @@ class GraspHighestController(Controller):
             self.visualize_plan()
             self.execute_plan()
 
+        # Close cv2 window to reduce clutter
+        cv2.destroyWindow(self.__class__.__name__)
+
         logger.info(f"{self.__class__.__name__} finished.")
 
 
@@ -286,3 +320,6 @@ if __name__ == "__main__":
 
     grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
     grasp_highest_controller.execute(interactive=True)
+
+    motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+    motion_blur_detector.wait_for_blur_to_stabilize()

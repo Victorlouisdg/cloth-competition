@@ -3,11 +3,16 @@ Detect live whether there is cloth in the air/on the table or none at all.
 Works by counting the amount of points in two 3D bounding boxes.
 Also shows the highest point in the table bbox and the lowest point in the air bbox.
 """
+
 from typing import Dict, Tuple
 
 import cv2
 import numpy as np
 import rerun as rr
+from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera import (
+    MultiprocessStereoRGBDPublisher,
+    MultiprocessStereoRGBDReceiver,
+)
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_camera_toolkit.pinhole_operations.projection import project_points_to_image_plane
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
@@ -20,9 +25,9 @@ from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, BBOX_CLOTH_ON_TABL
 from cloth_tools.config import load_camera_pose_in_left_and_right
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point, lowest_point
+from cloth_tools.stations.coordinate_frames import create_egocentric_world_frame
 from cloth_tools.visualization.rerun import rr_log_camera
 from loguru import logger
-from pydrake.math import RigidTransform, RollPitchYaw
 
 
 def log_and_draw_point(
@@ -78,18 +83,30 @@ def rr_log_bboxes(bboxes: Dict[str, BoundingBox3DType], bbox_colors: Dict[str, T
 
 
 if __name__ == "__main__":
-    camera = Zed2i(resolution=Zed2i.RESOLUTION_2K, depth_mode=Zed2i.NEURAL_DEPTH_MODE, fps=15)
+
+    camera_kwargs = {
+        "resolution": Zed2i.RESOLUTION_2K,
+        "depth_mode": Zed2i.NEURAL_DEPTH_MODE,
+        "fps": 15,
+    }
+    multiprocess = True
+
+    if multiprocess:
+
+        import multiprocessing
+
+        multiprocessing.set_start_method("spawn")
+
+        camera_publisher = MultiprocessStereoRGBDPublisher(Zed2i, camera_kwargs=camera_kwargs)
+        camera_publisher.start()
+        camera = MultiprocessStereoRGBDReceiver("camera")
+    else:
+        camera = Zed2i(**camera_kwargs)
 
     window_name = "Cloth BBoxes"
 
-    # X_CB_B is the 180 rotation between ROS URDF base en control box base
-    y_distance = 0.45
-    X_W_L = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi / 2]), p=[0, y_distance, 0]).GetAsMatrix4()
-    X_CB_B = RigidTransform(rpy=RollPitchYaw([0, 0, np.pi]), p=[0, 0, 0]).GetAsMatrix4()
-    X_LCB_W = X_CB_B @ np.linalg.inv(X_W_L)
-    X_LCB_C, _ = load_camera_pose_in_left_and_right()
-    X_C_W = np.linalg.inv(X_LCB_C) @ X_LCB_W
-    X_W_C = np.linalg.inv(X_C_W)
+    X_LCB_C, X_RCB_C = load_camera_pose_in_left_and_right()
+    X_W_C, _, _ = create_egocentric_world_frame(X_LCB_C, X_RCB_C)
 
     bbox_table = BBOX_CLOTH_ON_TABLE
     bbox_air = BBOX_CLOTH_IN_THE_AIR
@@ -104,10 +121,14 @@ if __name__ == "__main__":
     rr_log_camera(camera, X_W_C)
     rr_log_bboxes(bboxes, bbox_colors)
 
+    rr.log("world/identity_pose", rr.Transform3D(scale=0.5))
+
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
     while True:
-        image_rgb, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, X_W_C)
+        image_rgb, _, point_cloud_filtered = get_image_and_filtered_point_cloud(camera, X_W_C)
+        confidence_map = camera._retrieve_confidence_map()
+        rr.log("confidence_map", rr.Image(confidence_map))
 
         rr_point_cloud = rr.Points3D(positions=point_cloud_filtered.points, colors=point_cloud_filtered.colors)
         rr.log("world/point_cloud", rr_point_cloud)
@@ -120,3 +141,8 @@ if __name__ == "__main__":
         key = cv2.waitKey(1)
         if key == ord("q"):
             break
+
+    if multiprocess:
+        camera._close_shared_memory()
+        camera_publisher.stop()
+        camera_publisher.join()

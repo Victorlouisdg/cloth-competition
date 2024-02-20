@@ -1,5 +1,6 @@
 **.log
 **.console
+**.mp4
 
 **.idea/
 **.vscode/
@@ -14,3 +15,4 @@ build/
 notebooks/data/
 config
 dataset_**
+cloth_competition_dataset**

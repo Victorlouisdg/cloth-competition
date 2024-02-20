@@ -1,28 +1,16 @@
-import time
-
-from airo_camera_toolkit.cameras.multiprocess.multiprocess_video_recorder import MultiprocessVideoRecorder
-from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE
+from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, BBOX_CLOTH_ON_TABLE
 from cloth_tools.controllers.grasp_highest_controller import GraspHighestController
+from cloth_tools.controllers.grasp_lowest_controller import GraspLowestController
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.motion_blur_detector import MotionBlurDetector
 from cloth_tools.stations.competition_station import CompetitionStation
-from loguru import logger
 
 if __name__ == "__main__":
-    import os
-
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
-
     station = CompetitionStation()
 
     dual_arm = station.dual_arm
 
     while True:
-        start_time = time.time()
-
-        video_recorder = MultiprocessVideoRecorder("camera")
-        video_recorder.start()
-
         # Move the arms to their home positions
         home_controller = HomeController(station)
         home_controller.execute(interactive=False)
@@ -33,7 +21,5 @@ if __name__ == "__main__":
         motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
         motion_blur_detector.wait_for_blur_to_stabilize(timeout=15)
 
-        video_recorder.stop()
-
-        logger.info(f"Time taken: {time.time() - start_time:.2f} seconds")
-        break
+        grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
+        grasp_lowest_controller.execute(interactive=True)

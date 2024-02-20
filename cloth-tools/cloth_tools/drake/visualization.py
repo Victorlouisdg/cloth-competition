@@ -8,6 +8,36 @@ from pydrake.math import RigidTransform, RotationMatrix
 from pydrake.multibody.tree import ModelInstanceIndex
 from pydrake.planning import RobotDiagram
 from pydrake.systems.framework import Context
+from pydrake.trajectories import Trajectory
+
+
+def publish_dual_arm_trajectory(
+    joint_trajectory: Trajectory,
+    time_trajectory: Trajectory,
+    meshcat: Meshcat,
+    diagram: RobotDiagram,
+    context: Context,
+    arm_left_index: ModelInstanceIndex,
+    arm_right_index: ModelInstanceIndex,
+):
+    plant = diagram.plant()
+    plant_context = plant.GetMyContextFromRoot(context)
+
+    meshcat.StartRecording(set_visualizations_while_recording=False)
+
+    duration = time_trajectory.end_time()
+    fps = 60.0
+    frames = duration * fps
+
+    for t in np.linspace(0, duration, int(np.ceil(frames))):
+        context.SetTime(t)
+        q = joint_trajectory.value(time_trajectory.value(t).item())
+        plant.SetPositions(plant_context, arm_left_index, q[0:6])
+        plant.SetPositions(plant_context, arm_right_index, q[6:])
+        diagram.ForcedPublish(context)
+
+    meshcat.StopRecording()
+    meshcat.PublishRecording()
 
 
 def publish_joint_path(
