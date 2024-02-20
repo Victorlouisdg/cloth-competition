@@ -5,6 +5,7 @@ import cv2
 from airo_camera_toolkit.interfaces import StereoRGBDCamera
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from cloth_tools.annotation.grasp_annotation import get_manual_grasp_annotation, save_grasp_info
 from cloth_tools.dataset.bookkeeping import ensure_dataset_dir, find_highest_suffix
 from cloth_tools.dataset.format import CompetitionObservation, save_competition_observation
 from cloth_tools.stations.competition_station import CompetitionStation
@@ -60,36 +61,43 @@ def collect_competition_samples(
 
         image_left_bgr = ImageConverter.from_numpy_int_format(image_left).image_in_opencv_format
 
+        observation = CompetitionObservation(
+            image_left=image_left,
+            image_right=image_right,
+            depth_map=depth_map,
+            point_cloud=point_cloud,
+            depth_image=depth_image,
+            confidence_map=confidence_map,
+            camera_pose_in_world=camera_pose_in_world,
+            arm_left_pose_in_world=arm_left_pose_in_world,
+            arm_right_pose_in_world=arm_right_pose_in_world,
+            arm_left_joints=arm_left_joints,
+            arm_right_joints=arm_right_joints,
+            arm_left_tcp_pose_in_world=arm_left_tcp_pose_in_world,
+            arm_right_tcp_pose_in_world=arm_right_tcp_pose_in_world,
+            right_camera_pose_in_left_camera=right_camera_pose_in_left_camera,
+            camera_intrinsics=camera_intrinsics,
+            camera_resolution=camera_resolution,
+        )
+
         cv2.imshow(window_name, image_left_bgr)
         key = cv2.waitKey(1)
         if key == ord("q"):
             break
         elif key == ord("s"):
-            observation = CompetitionObservation(
-                image_left=image_left,
-                image_right=image_right,
-                depth_map=depth_map,
-                point_cloud=point_cloud,
-                depth_image=depth_image,
-                confidence_map=confidence_map,
-                camera_pose_in_world=camera_pose_in_world,
-                arm_left_pose_in_world=arm_left_pose_in_world,
-                arm_right_pose_in_world=arm_right_pose_in_world,
-                arm_left_joints=arm_left_joints,
-                arm_right_joints=arm_right_joints,
-                arm_left_tcp_pose_in_world=arm_left_tcp_pose_in_world,
-                arm_right_tcp_pose_in_world=arm_right_tcp_pose_in_world,
-                right_camera_pose_in_left_camera=right_camera_pose_in_left_camera,
-                camera_intrinsics=camera_intrinsics,
-                camera_resolution=camera_resolution,
-            )
-
             sample_index = find_highest_suffix(dataset_dir, "sample") + 1
 
             sample_dir = dataset_dir / f"sample_{sample_index:06d}"
             observation_dir = str(sample_dir / "observation")
             save_competition_observation(observation, observation_dir)
             logger.info(f"Saved observation to {observation_dir}")
+
+            grasp_info = get_manual_grasp_annotation(
+                image_left, depth_map, point_cloud, camera_pose_in_world, camera_intrinsics, log_to_rerun=True
+            )
+
+            grasp_dir = Path(sample_dir) / "grasp"
+            save_grasp_info(str(grasp_dir), grasp_info)
 
     return dataset_dir
 

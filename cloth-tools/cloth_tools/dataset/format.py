@@ -2,6 +2,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import List
 
 import cv2
 import numpy as np
@@ -21,6 +22,11 @@ from airo_typing import (
     PointCloud,
 )
 from loguru import logger
+from pydantic import BaseModel
+
+
+class JointConfigurationModel(BaseModel):
+    values: List[float]
 
 
 @dataclass
@@ -64,8 +70,7 @@ COMPETITION_OBSERVATION_FILENAMES = {
     "arm_left_tcp_pose_in_world": "arm_left_tcp_pose_in_world.json",
     "arm_right_tcp_pose_in_world": "arm_right_tcp_pose_in_world.json",
     "right_camera_pose_in_left_camera": "right_camera_pose_in_left_camera.json",
-    "camera_intrinsics": "camera_intrinsics.json",
-    "camera_resolution": "camera_resolution.json",
+    "camera_intrinsics": "camera_intrinsics.json",  # Resolution is saved together with the intrinsics
 }
 
 
@@ -80,10 +85,13 @@ def save_competition_observation(observation: CompetitionObservation, observatio
     # Convert images from RGB to BGR
     image_left = ImageConverter.from_numpy_int_format(observation.image_left).image_in_opencv_format
     image_right = ImageConverter.from_numpy_int_format(observation.image_right).image_in_opencv_format
+    depth_image = ImageConverter.from_numpy_int_format(observation.depth_image).image_in_opencv_format
 
     cv2.imwrite(filepaths["image_left"], image_left)
     cv2.imwrite(filepaths["image_right"], image_right)
+    cv2.imwrite(filepaths["depth_image"], depth_image)
     cv2.imwrite(filepaths["depth_map"], observation.depth_map)
+    cv2.imwrite(filepaths["confidence_map"], observation.confidence_map)
 
     pcd = point_cloud_to_open3d(observation.point_cloud)
 
@@ -92,11 +100,6 @@ def save_competition_observation(observation: CompetitionObservation, observatio
         pcd.point.colors = o3d.utility.Vector3dVector((pcd.point.colors.numpy() * 255.0).astype(np.uint8))
 
     o3d.t.io.write_point_cloud(filepaths["point_cloud"], pcd)
-
-    cv2.imwrite(filepaths["confidence_map"], observation.confidence_map)
-
-    depth_image = ImageConverter.from_numpy_int_format(observation.depth_image).image_in_opencv_format
-    cv2.imwrite(filepaths["depth_image"], depth_image)
 
     with open(filepaths["camera_intrinsics"], "w") as f:
         intrinsics_model_left = CameraIntrinsics.from_matrix_and_resolution(
@@ -117,12 +120,12 @@ def save_competition_observation(observation: CompetitionObservation, observatio
         json.dump(arm_right_pose_model.model_dump(exclude_none=True), f, indent=4)
 
     with open(filepaths["arm_left_joints"], "w") as f:
-        # json.dump(observation.arm_left_joints, f, indent=4)
-        logger.warning("Not saving arm_left_joints")
+        joints_model = JointConfigurationModel(values=list(observation.arm_left_joints))
+        json.dump(joints_model.model_dump(exclude_none=True), f, indent=4)
 
     with open(filepaths["arm_right_joints"], "w") as f:
-        # json.dump(observation.arm_right_joints, f, indent=4)
-        logger.warning("Not saving arm_right_joints")
+        joints_model = JointConfigurationModel(values=list(observation.arm_right_joints))
+        json.dump(joints_model.model_dump(exclude_none=True), f, indent=4)
 
     with open(filepaths["arm_left_tcp_pose_in_world"], "w") as f:
         arm_left_tcp_pose_model = Pose.from_homogeneous_matrix(observation.arm_left_tcp_pose_in_world)
@@ -131,6 +134,10 @@ def save_competition_observation(observation: CompetitionObservation, observatio
     with open(filepaths["arm_right_tcp_pose_in_world"], "w") as f:
         arm_right_tcp_pose_model = Pose.from_homogeneous_matrix(observation.arm_right_tcp_pose_in_world)
         json.dump(arm_right_tcp_pose_model.model_dump(exclude_none=True), f, indent=4)
+
+    with open(filepaths["right_camera_pose_in_left_camera"], "w") as f:
+        right_camera_pose_model = Pose.from_homogeneous_matrix(observation.right_camera_pose_in_left_camera)
+        json.dump(right_camera_pose_model.model_dump(exclude_none=True), f, indent=4)
 
     logger.info(f"Saved observation to {observation_dir}")
 
@@ -171,14 +178,11 @@ def load_competition_observation(observation_dir: str) -> CompetitionObservation
     with open(filepaths["arm_right_pose_in_world"], "r") as f:
         arm_right_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
 
-    # with open(filepaths["arm_left_joints"], "r") as f:
-    #     arm_left_joints = json.load(f)
+    with open(filepaths["arm_left_joints"], "r") as f:
+        arm_left_joints = np.array(JointConfigurationModel.model_validate_json(f.read()).values)
 
-    # with open(filepaths["arm_right_joints"], "r") as f:
-    #     arm_right_joints = json.load(f)
-
-    arm_left_joints = None
-    arm_right_joints = None
+    with open(filepaths["arm_right_joints"], "r") as f:
+        arm_right_joints = np.array(JointConfigurationModel.model_validate_json(f.read()).values)
 
     with open(filepaths["arm_left_tcp_pose_in_world"], "r") as f:
         arm_left_tcp_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
@@ -186,10 +190,8 @@ def load_competition_observation(observation_dir: str) -> CompetitionObservation
     with open(filepaths["arm_right_tcp_pose_in_world"], "r") as f:
         arm_right_tcp_pose_in_world = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
 
-    # with open(filepaths["right_camera_pose_in_left_camera"], "r") as f:
-    #     right_camera_pose_in_left_camera = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
-
-    right_camera_pose_in_left_camera = None
+    with open(filepaths["right_camera_pose_in_left_camera"], "r") as f:
+        right_camera_pose_in_left_camera = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
 
     with open(filepaths["camera_intrinsics"], "r") as f:
         intrinsics_model = CameraIntrinsics.model_validate_json(f.read())

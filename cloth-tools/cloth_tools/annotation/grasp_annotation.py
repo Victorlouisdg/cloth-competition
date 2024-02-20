@@ -276,7 +276,7 @@ def get_manual_grasp_annotation(  # noqa: C901
     image_topdown = image_topdown_blurred
     blur_image = True
     grasp_pose = None
-    grasp_depth = 0.02
+    grasp_depth = 0.05
 
     while True:
         image_frontal_annotated = image_frontal.copy()
@@ -346,7 +346,7 @@ def get_manual_grasp_annotation(  # noqa: C901
 
 class GraspAnnotation(BaseModel):
     clicked_point_frontal: Tuple[int, int]
-    clicked_point_topdown: Tuple[int, int]
+    clicked_point_topdown: Tuple[int, int] | None
     grasp_depth: float
 
 
@@ -358,7 +358,7 @@ def save_grasp_info(dir: str, grasp_info: GraspAnnotationInfo):
 
     with open(grasp_pose_file, "w") as f:
         grasp_pose_model = Pose.from_homogeneous_matrix(grasp_info.grasp_pose)
-        json.dump(grasp_pose_model.model_dump(exclude_none=True), f, indent=4)
+        json.dump(grasp_pose_model.model_dump(exclude_none=False), f, indent=4)
 
     grasp_annotation_file = os.path.join(dir, "grasp_annotation.json")
     grasp_annotation = GraspAnnotation(
