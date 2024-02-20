@@ -15,3 +15,4 @@ build/
 notebooks/data/
 config
 dataset_**
+cloth_competition_dataset**
