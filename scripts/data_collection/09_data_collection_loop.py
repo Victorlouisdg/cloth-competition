@@ -56,10 +56,10 @@ def collect_observation(station: CompetitionStation) -> str:
 
 
 if __name__ == "__main__":
-    import os
+    # import os
 
-    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    # os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
     station = CompetitionStation()
 
