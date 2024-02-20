@@ -1,4 +1,5 @@
 import sys
+import time
 from typing import Any, Optional, Tuple
 
 import cv2
@@ -17,6 +18,7 @@ from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from cloth_tools.visualization.opencv import draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
+from cloth_tools.wrench_smoother import WrenchSmoother
 from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 from pydrake.trajectories import Trajectory
@@ -100,7 +102,7 @@ class StretchController(Controller):
         tcp_distance = np.linalg.norm(X_W_LTCP[:3, 3] - X_W_RTCP[:3, 3])
         logger.info(f"{self.__class__.__name__}: Distance between TCPs at start: {tcp_distance:.3f} meters")
 
-        backwards_shift = tcp_distance / 2.0  # keep end distance same as distance at grasp
+        backwards_shift = 0.9 * (tcp_distance / 2.0)  # set distance to a percentage of the distance when grasping
         stretch_pose_left = move_pose_backwards(hang_pose_left, backwards_shift)
         stretch_pose_right = move_pose_backwards(hang_pose_right, backwards_shift)
 
@@ -134,11 +136,101 @@ class StretchController(Controller):
         self._trajectory_to_stretch = trajectory_to_stretch
         self._time_trajectory_to_stretch = time_trajectory_to_stretch
 
+    def execute_stretch_with_force(self):
+        station = self.station
+        dual_arm = station.dual_arm
+
+        X_W_LCB = station.left_arm_pose
+        X_W_RCB = station.right_arm_pose
+
+        tension_threshold = 4.0
+        tcp_distance_threshold = 0.9  # never move more that this distance apart
+
+        servo_period = 0.05  # seconds
+        servo_speed_start = 0.05  # meters per second starting fast result in a shock in the F/T readings
+
+        servo_distance_start = servo_speed_start * servo_period
+        servo_distance = servo_distance_start
+
+        servos_per_second = 1.0 / servo_period
+        history = int(servos_per_second * 2)  # smooth over last 2 seconds
+        history = max(history, 1)
+
+        logger.info("Smoothing over a history of {} samples".format(history))
+
+        wrench_smoother_left = WrenchSmoother(history=history)
+        wrench_smoother_right = WrenchSmoother(history=history)
+
+        servo_awaitable = None
+
+        warmup = 1.0
+        timeout = 5.0
+        time_start = time.time()
+
+        while True:
+            wrench_left = dual_arm.left_manipulator.rtde_receive.getActualTCPForce()
+            wrench_right = dual_arm.right_manipulator.rtde_receive.getActualTCPForce()
+
+            wrench_smoothed_left = wrench_smoother_left.add_wrench(wrench_left)
+            wrench_smoothed_right = wrench_smoother_right.add_wrench(wrench_right)
+
+            # log each scalar
+            for i, label in zip(range(3), ["Fx", "Fy", "Fz"]):
+                rr.log(f"/force/left/{label}", rr.Scalar(wrench_smoothed_left[i]))
+                rr.log(f"/force/right/{label}", rr.Scalar(wrench_smoothed_right[i]))
+
+            for i, label in zip(range(3, 6), ["Tx", "Ty", "Tz"]):
+                rr.log(f"/torque/left/{label}", rr.Scalar(wrench_smoothed_left[i]))
+                rr.log(f"/torque/right/{label}", rr.Scalar(wrench_smoothed_right[i]))
+
+            tension = (wrench_smoothed_left[0] - wrench_smoothed_right[0]) / 2.0
+            logger.info(f"Tension: {tension:.1f} N")
+            rr.log("/force/tension", rr.Scalar(tension))
+
+            if time.time() - time_start < warmup:
+                # During the warmup time don't servo or check for tension
+                continue
+
+            if time.time() - time_start > timeout:
+                logger.warning(f"Tension threshold not reached within timeout, tension: {tension}")
+                dual_arm.left_manipulator.rtde_control.servoStop()
+                dual_arm.right_manipulator.rtde_control.servoStop()
+                break
+
+            X_LCB_TCP = dual_arm.left_manipulator.get_tcp_pose()
+            X_RCB_TCP = dual_arm.right_manipulator.get_tcp_pose()
+            X_W_LTCP = X_W_LCB @ X_LCB_TCP
+            X_W_RTCP = X_W_RCB @ X_RCB_TCP
+            tcp_distance = np.linalg.norm(X_W_LTCP[:3, 3] - X_W_RTCP[:3, 3])
+
+            X_servo_L = move_pose_backwards(X_W_LTCP, servo_distance)
+            X_servo_R = move_pose_backwards(X_W_RTCP, servo_distance)
+
+            if servo_awaitable is not None:
+                servo_awaitable.wait()
+
+            if tension > tension_threshold:
+                logger.info(f"Tension reached threshold {tension:.2f} N")
+                dual_arm.left_manipulator.rtde_control.servoStop()
+                dual_arm.right_manipulator.rtde_control.servoStop()
+                break
+
+            if tcp_distance > tcp_distance_threshold:
+                logger.info(f"TCP distance reached threshold {tcp_distance:.2f} m")
+                dual_arm.left_manipulator.rtde_control.servoStop()
+                dual_arm.right_manipulator.rtde_control.servoStop()
+                break
+
+            servo_awaitable = dual_arm.servo_to_tcp_pose(X_servo_L, X_servo_R, time=servo_period)  # about 1 cm/s
+
     def execute_stretch(self) -> None:
         dual_arm = self.station.dual_arm
 
-        # Execute the path to the pregrasp pose
+        # Execute the path to the strech start poses
         execute_dual_arm_trajectory(dual_arm, self._trajectory_to_stretch, self._time_trajectory_to_stretch)
+
+        # Execute the stretch with force
+        self.execute_stretch_with_force()
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?

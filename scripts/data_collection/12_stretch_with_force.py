@@ -1,14 +1,12 @@
 import sys
 import time
-from collections import deque
 
 import numpy as np
 import rerun as rr
-import scipy
-from airo_typing import WrenchType
 from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
 from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.stations.competition_station import CompetitionStation
+from cloth_tools.wrench_smoother import WrenchSmoother
 from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 
@@ -52,45 +50,6 @@ def move_to_stretch_pose(station: CompetitionStation):
     execute_dual_arm_trajectory(dual_arm, trajectory_to_stretch, time_trajectory_to_stretch)
 
 
-class WrenchSmoother:
-    def __init__(self, history: int):
-        self.history = history
-        self.sigma = 2 * history + 1
-
-        self.forces_x = deque(maxlen=history)
-        self.forces_y = deque(maxlen=history)
-        self.forces_z = deque(maxlen=history)
-        self.torques_x = deque(maxlen=history)
-        self.torques_y = deque(maxlen=history)
-        self.torques_z = deque(maxlen=history)
-
-        self.wrench_deques = [
-            self.forces_x,
-            self.forces_y,
-            self.forces_z,
-            self.torques_x,
-            self.torques_y,
-            self.torques_z,
-        ]
-
-    def smooth(self, wrench_deque: deque) -> float:
-        return scipy.ndimage.gaussian_filter1d(wrench_deque, sigma=self.sigma)[-1]
-
-    def smooth_wrench(self) -> WrenchType:
-        wrench = []
-
-        for wrench_deque in self.wrench_deques:
-            wrench.append(self.smooth(wrench_deque))
-
-        return wrench
-
-    def add_wrench(self, wrench: WrenchType) -> WrenchType:
-        for i, component in enumerate(wrench):
-            self.wrench_deques[i].append(component)
-
-        return self.smooth_wrench()
-
-
 if __name__ == "__main__":
     rr.init("Force measurement", spawn=True)
 
@@ -122,7 +81,7 @@ if __name__ == "__main__":
 
     servos_per_second = 1.0 / servo_time
     history = int(servos_per_second * 2)  # smooth over last 2 seconds
-    history = min(history, 1)
+    history = max(history, 1)
 
     logger.info("Smoothing over a history of {} samples".format(history))
 

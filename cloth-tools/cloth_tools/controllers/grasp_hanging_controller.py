@@ -159,7 +159,6 @@ class GraspHangingController(Controller):
                 None,
                 pregrasp_pose,
                 desirable_goal_configurations_right=[
-                    self.station.home_joints_right,
                     self.GOOD_GRASP_JOINTS_RIGHT_0,
                 ],  # Try to avoid the shoulder from pointing towards the camera
             )
