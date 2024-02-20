@@ -12,6 +12,7 @@ from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.controllers.stretch_controller import StretchController
 from cloth_tools.dataset.bookkeeping import ensure_dataset_dir, find_highest_suffix
 from cloth_tools.dataset.format import CompetitionObservation, save_competition_observation
+from cloth_tools.motion_blur_detector import MotionBlurDetector
 from cloth_tools.stations.competition_station import CompetitionStation
 from loguru import logger
 
@@ -94,17 +95,16 @@ if __name__ == "__main__":
         grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
         grasp_highest_controller.execute(interactive=True)
 
-        time_to_stop_swinging = 5
-        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
-        time.sleep(time_to_stop_swinging)
+        motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+        motion_blur_detector.wait_for_blur_to_stabilize()
 
         grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
         grasp_lowest_controller.execute(interactive=True)
 
-        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
+        motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+        motion_blur_detector.wait_for_blur_to_stabilize(timeout=20)
 
         # Save competition input data here
-
         observation_start_dir = str(sample_dir / "observation_start")
         observation_start = collect_observation(station)
         save_competition_observation(observation_start, observation_start_dir)
@@ -115,8 +115,8 @@ if __name__ == "__main__":
         stretch_controller = StretchController(station)
         stretch_controller.execute(interactive=True)
 
-        logger.info(f"Waiting {time_to_stop_swinging} seconds for the cloth to stop swinging")
-        time.sleep(time_to_stop_swinging)
+        motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+        motion_blur_detector.wait_for_blur_to_stabilize(timeout=15)
 
         # Save results here
         observation_result_dir = str(sample_dir / "observation_result")

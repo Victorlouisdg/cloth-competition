@@ -8,6 +8,7 @@ from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera im
     MultiprocessStereoRGBDReceiver,
 )
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
+from airo_camera_toolkit.image_transforms.transforms.crop import Crop
 from airo_camera_toolkit.interfaces import StereoRGBDCamera
 from airo_typing import HomogeneousMatrixType, JointConfigurationType
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e_in_world
@@ -92,6 +93,11 @@ class CompetitionStation(DualArmStation):
             camera = Zed2i(**camera_kwargs)
 
         check_zed_point_cloud_completeness(camera)
+
+        # Image crop used to check motion blur of hanging cloth
+        # Note that parts of the cloth may be outside the crop
+        image_rgb = camera.get_rgb_image_as_int()
+        self.hanging_cloth_crop = Crop(image_rgb.shape, x=1000, y=200, w=200, h=500)
 
         camera_pose_in_left, camera_pose_in_right = load_camera_pose_in_left_and_right()
 

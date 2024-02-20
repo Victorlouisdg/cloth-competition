@@ -20,6 +20,7 @@ from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE, bbox_to_mins_and_siz
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.visualization import publish_dual_arm_trajectory
+from cloth_tools.motion_blur_detector import MotionBlurDetector
 from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point
@@ -319,3 +320,6 @@ if __name__ == "__main__":
 
     grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
     grasp_highest_controller.execute(interactive=True)
+
+    motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+    motion_blur_detector.wait_for_blur_to_stabilize()
