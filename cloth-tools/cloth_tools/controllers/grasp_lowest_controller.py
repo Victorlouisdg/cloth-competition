@@ -49,7 +49,7 @@ def flatter_orientation(gripper_forward_direction: Vector3DType) -> RotationMatr
 
 
 def lowest_point_grasp_pose(
-    lowest_point: Vector3DType, grasp_depth: float = 0.08, height_offset: float = 0.025
+    lowest_point: Vector3DType, grasp_depth: float = 0.1, height_offset: float = 0.025
 ) -> HomogeneousMatrixType:
     """TODO: docstring
 
