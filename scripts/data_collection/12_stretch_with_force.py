@@ -61,7 +61,10 @@ if __name__ == "__main__":
 
     move_to_stretch_pose(station)
 
-    time.sleep(1)  # let 1 second pass to settle the forces of the movement
+    time.sleep(5)  # let 5 seconds pass to settle the forces of the movement
+
+    dual_arm.left_manipulator.rtde_control.zeroFtSensor()
+    dual_arm.right_manipulator.rtde_control.zeroFtSensor()
 
     tension_threshold = 4.0
     tcp_distance_threshold = 0.9  # never move more that this distance apart
@@ -150,10 +153,10 @@ if __name__ == "__main__":
         #     has_servo_distance_decreased = True
         #     low_tension_counter = 0
 
-        X_servo_L = move_pose_backwards(X_W_LTCP, servo_distance)
-        X_servo_R = move_pose_backwards(X_W_RTCP, servo_distance)
+        # X_servo_L = move_pose_backwards(X_W_LTCP, servo_distance)
+        # X_servo_R = move_pose_backwards(X_W_RTCP, servo_distance)
 
-        if servo_awaitable is not None:
-            servo_awaitable.wait()
+        # if servo_awaitable is not None:
+        #     servo_awaitable.wait()
 
-        servo_awaitable = dual_arm.servo_to_tcp_pose(X_servo_L, X_servo_R, time=servo_time)  # about 1 cm/s
+        # servo_awaitable = dual_arm.servo_to_tcp_pose(X_servo_L, X_servo_R, time=servo_time)  # about 1 cm/s
