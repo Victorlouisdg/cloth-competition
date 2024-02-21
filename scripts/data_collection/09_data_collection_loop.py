@@ -79,10 +79,6 @@ if __name__ == "__main__":
     while True:
         start_time = time.time()
 
-        # Move the arms to their home positions
-        home_controller = HomeController(station)
-        home_controller.execute(interactive=False)
-
         sample_index = find_highest_suffix(dataset_dir, "sample") + 1
         sample_dir = dataset_dir / f"sample_{sample_index:06d}"
         sample_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +86,10 @@ if __name__ == "__main__":
         video_path = str(sample_dir / "episode.mp4")
         video_recorder = MultiprocessVideoRecorder("camera", video_path)
         video_recorder.start()
+
+        # Move the arms to their home positions
+        home_controller = HomeController(station)
+        home_controller.execute(interactive=False)
 
         # Start of new episode
         grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
