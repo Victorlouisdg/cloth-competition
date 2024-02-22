@@ -346,7 +346,7 @@ def get_manual_grasp_annotation(  # noqa: C901
 
 class GraspAnnotation(BaseModel):
     clicked_point_frontal: Tuple[int, int]
-    clicked_point_topdown: Tuple[int, int] | None
+    clicked_point_topdown: Tuple[int, int] | None = None
     grasp_depth: float
 
 
