@@ -39,11 +39,13 @@ def main():
 
     predictor = SamPredictor(sam)
 
-    image = cv2.imread('images/truck.jpg')
+    image = cv2.imread('images/donut.jpeg')
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
+    print(image.shape)
+
     predictor.set_image(image)
-    input_point = np.array([[500, 375]])
+    input_point = np.array([[200, 150]])
     input_label = np.array([1])
 
     masks, scores, logits = predictor.predict(

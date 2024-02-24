@@ -6,3 +6,4 @@ pycocotools
 matplotlib
 onnxruntime
 onnx
+flask
