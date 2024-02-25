@@ -7,3 +7,5 @@ matplotlib
 onnxruntime
 onnx
 flask
+Flask-Cors
+../../submodules/segment-anything

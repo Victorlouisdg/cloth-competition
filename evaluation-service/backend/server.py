@@ -6,13 +6,12 @@ sys.path.append("..")
 from segment_anything import sam_model_registry, SamPredictor
 import cv2
 import numpy as np
+import torch
+import os
 
 app = Flask(__name__)
 CORS(app)  #
 
-def generate_coordinates(x, y):
-    # Just a placeholder logic, you should replace this with your actual logic
-    return [x, y, x + 50, y + 50, x + 100, y, x + 50, y - 50]
 
 
 
@@ -24,6 +23,12 @@ def create_app(image_directory, predictor):
         image_path = f'{image_directory}/{image_name}'
         return send_file(image_path, mimetype='image/jpeg')  # Adjust mimetype as per your image type
     
+    @app.route('/api/images', methods=['GET'])
+    def get_images():
+        image_names = os.listdir(image_directory)
+
+        return jsonify({'images': image_names})
+    
     @app.route('/api/coordinates', methods=['POST'])
     def get_coordinates():
         print("get_coordinates called")
@@ -32,22 +37,12 @@ def create_app(image_directory, predictor):
         y = data['y']
         image_name = data['imageName']
 
-        print(x, y)
-
-        image = cv2.imread(f'images/{image_name}')
+        image = cv2.imread(f'{image_directory}/{image_name}')
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-        print(image.shape)
-
-        print("image", x, y)
-
         predictor.set_image(image)
-
-        print("set_image called", x, y)
         input_point = np.array([[x, y]])
         input_label = np.array([1])
-
-        print(input_point)
 
         masks, scores, logits = predictor.predict(
             point_coords=input_point,
@@ -57,11 +52,10 @@ def create_app(image_directory, predictor):
 
         print(masks.shape, scores.shape, logits.shape)
 
-        # coords = np.where(np.any(masks, axis=0))
-        coords = np.where(masks[0])
+        # TODO: allow using any of the masks
+        coords = np.where(masks[2])
         combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
 
-        print(combined_coords)
 
         # Return the new coordinates as a response
         return jsonify({'coordinates': combined_coords.tolist()})
@@ -73,10 +67,14 @@ if __name__ == '__main__':
     parser.add_argument('image_directory', type=str, help='Path to the directory containing images')
     args = parser.parse_args()
 
-    sam_checkpoint = "sam_vit_h_4b8939.pth"
-    model_type = "vit_h"
+    # TODO: use best model 
+    sam_checkpoint = "../weights/sam_vit_b_01ec64.pth"
+    model_type = "vit_b"
 
     device = "cpu"
+
+    if torch.cuda.is_available():
+        device = "cuda"
 
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)

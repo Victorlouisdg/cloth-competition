@@ -1,7 +1,8 @@
 // App.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Stage, Layer, Image, Line, Text } from 'react-konva';
 import axios from 'axios';
+import Select from 'react-select';
 
 const calculateScale = (containerSize, imageSize) => {
   return containerSize / imageSize;
@@ -12,9 +13,26 @@ const App = () => {
   const [image, setImage] = useState(null);
   const [coordinates, setCoordinates] = useState([]);
   const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
+  const [availableFiles, setAvailableFiles] = useState([]);
 
-  const handleChange = (event) => {
-    setImageName(event.target.value);
+
+  useEffect(() => {
+    fetchAvailableFiles();
+  }, []);
+
+  const fetchAvailableFiles = () => {
+    axios.get('http://127.0.0.1:5000/api/images')
+      .then(response => {
+        setAvailableFiles(response.data.images.map(file => ({ value: file, label: file })));
+      })
+      .catch(error => {
+        console.error('Error fetching available files:', error);
+      });
+  };
+
+  const handleChange = (selectedOption) => {
+    setImageName(selectedOption.value);
+    handleImageLoad(selectedOption.value);
   };
 
   const handleMouseMove = (event) => {
@@ -22,12 +40,12 @@ const App = () => {
     setHoverPosition({ x: layerX, y: layerY });
   };
 
-  const handleImageLoad = () => {
+  const handleImageLoad = (imageToLoad) => {
     setCoordinates([]);
     const img = new window.Image();
-    img.src = `http://127.0.0.1:5000/images/${imageName}`;
+    img.src = `http://127.0.0.1:5000/images/${imageToLoad}`;
     img.onload = () => {
-      const maxWidth = window.innerWidth * 0.8; // 80% of the screen width
+      const maxWidth = window.innerWidth * 0.7;
       const scale = maxWidth / img.width;
       console.log('Image width:', img.width, 'Image height:', img.height, scale);
       setImage({ img, scale });
@@ -49,28 +67,37 @@ const App = () => {
   };
 
   return (
-    <div>
-      <input
-        type="text"
-        placeholder="Enter image name"
-        value={imageName}
-        onChange={handleChange}
-      />
-      <button onClick={handleImageLoad}>Load Image</button>
-      <Stage onMouseMove={handleMouseMove} width={image ? image.img.width * image.scale : 800} height={image ? image.img.height * image.scale : 600}>
-        <Layer>
-          {image && (
-            <Image
-            image={image.img}
-            onClick={handleImageClick}
-            scaleX={image.scale}
-            scaleY={image.scale}
-          />
-          )}
-          <Polygon coordinates={coordinates} />
-          {image && <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />}
-        </Layer>
-      </Stage>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ marginBottom: '20px' }}>
+        <Select
+          value={availableFiles.find(file => file.value === imageName)}
+          onChange={handleChange}
+          options={availableFiles}
+          placeholder="Select an image"
+          styles={{
+            container: (provided, state) => ({
+              ...provided,
+              width: '200px',
+            }),
+          }}
+        />
+      </div>
+      {!!image && <div style={{ marginTop: '20px', border: '1px solid #ccc', borderRadius: '5px', padding: '10px' }}>
+        <Stage onMouseMove={handleMouseMove} width={image ? image.img.width * image.scale : 800} height={image ? image.img.height * image.scale : 600}>
+          <Layer>
+            {image && (
+              <Image
+                image={image.img}
+                onClick={handleImageClick}
+                scaleX={image.scale}
+                scaleY={image.scale}
+              />
+            )}
+            <Polygon coordinates={coordinates} />
+            {image && <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />}
+          </Layer>
+        </Stage>
+      </div>}
     </div>
   );
 };
