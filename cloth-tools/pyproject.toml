@@ -6,30 +6,25 @@ build-backend = "setuptools.build_meta"
 name = "cloth-tools"
 version = "0.1.1"
 authors = [
-  { name="Victor-Louis De Gusseme", email="victorlouisdg@gmail.com" },
+  { name = "Victor-Louis De Gusseme", email = "victorlouisdg@gmail.com" },
 ]
 description = "Official package for the ICRA 2024 Cloth Competition"
 readme = "README.md"
 requires-python = ">=3.10"
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
 ]
 
 dependencies = [
-    "numpy",
-    "click",
-    "rerun-sdk",
-    "pydrake",
-    "airo-models >= 0.0.7",
-    "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing",
-    "airo-spatial-algebra @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-spatial-algebra",
-    "airo-robots @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-robots",
-    "airo-camera-toolkit @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-camera-toolkit",
-    "airo-dataset-tools @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-dataset-tools",
-    "linen @ git+https://github.com/Victorlouisdg/linen@main#subdirectory=linen",
-    "ffmpegcv"
+  "numpy",
+  "click",
+  "rerun-sdk",
+  "pydrake",
+  "airo-models >= 0.0.7",
+  "ur-analytic-ik == 0.0.3",
+  "ffmpegcv",
 ]
 
 [project.urls]

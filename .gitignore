@@ -16,3 +16,4 @@ notebooks/data/
 config
 dataset_**
 cloth_competition_dataset**
+grasp_new/
