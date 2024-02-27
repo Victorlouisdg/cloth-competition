@@ -23,6 +23,7 @@ dependencies = [
   "rerun-sdk",
   "pydrake",
   "tqdm",
+  "requests",
   "airo-models >= 0.0.7",
 ]
 

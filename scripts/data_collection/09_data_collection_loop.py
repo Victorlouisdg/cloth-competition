@@ -29,10 +29,23 @@ def collect_observation(station: CompetitionStation) -> str:
     pcd = pcd_in_camera.transform(camera_pose_in_world)  # transform to world frame (= base frame of left robot)
     point_cloud = open3d_to_point_cloud(pcd)
 
-    arm_left_tcp_pose_in_world = station.dual_arm.left_manipulator.get_tcp_pose()
+    arm_left_tcp_pose_in_base = station.dual_arm.left_manipulator.get_tcp_pose()
     arm_left_joints = station.dual_arm.left_manipulator.get_joint_configuration()
-    arm_right_tcp_pose_in_world = station.dual_arm.right_manipulator.get_tcp_pose()
+    arm_right_tcp_pose_in_base = station.dual_arm.right_manipulator.get_tcp_pose()
     arm_right_joints = station.dual_arm.right_manipulator.get_joint_configuration()
+
+    # Convert TCP poses from robot base frames to world frame
+    X_LCB_TCPL = arm_left_tcp_pose_in_base
+    X_RCB_TCPR = arm_right_tcp_pose_in_base
+
+    X_W_LCB = arm_left_pose_in_world
+    X_W_RCB = arm_right_pose_in_world
+
+    X_W_TCPL = X_W_LCB @ X_LCB_TCPL
+    X_W_TCPR = X_W_RCB @ X_RCB_TCPR
+
+    arm_left_tcp_pose_in_world = X_W_TCPL
+    arm_right_tcp_pose_in_world = X_W_TCPR
 
     observation = CompetitionObservation(
         image_left=image_left,
