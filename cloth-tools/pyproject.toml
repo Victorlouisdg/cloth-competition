@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cloth-tools"
-version = "0.1.1"
+version = "0.1.2"
 authors = [
   { name = "Victor-Louis De Gusseme", email = "victorlouisdg@gmail.com" },
 ]
@@ -22,9 +22,8 @@ dependencies = [
   "click",
   "rerun-sdk",
   "pydrake",
+  "tqdm",
   "airo-models >= 0.0.7",
-  "ur-analytic-ik == 0.0.3",
-  "ffmpegcv",
 ]
 
 [project.urls]

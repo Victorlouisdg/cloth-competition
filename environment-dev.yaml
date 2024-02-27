@@ -3,11 +3,18 @@
 # also make sure to install the local packages with the "-e" prefix
 # to create an environment: conda env create -f environment.yaml
 # to update: conda env update -f environment.yaml
-name: cloth-competition
+name: cloth-competition-dev
 channels:
   - conda-forge
+  - pytorch
+  - nvidia
 dependencies:
   - python=3.10
+  - pytorch
+  - torchvision
+  - pytorch-cuda=12.1
+  - ffmpeg>=6.1.0
+  - x265
   - opencv
   - jupyter
   - pip
@@ -15,7 +22,17 @@ dependencies:
       - numpy
       - matplotlib
       - scipy
+      - wandb
+      - pytorch-lightning
       - imageio
+      - albumentations
+      - timm
+      - pytest
+      - pre-commit
+      - mypy
+      - darglint
+      - "ffmpegcv"
+      - "ur-analytic-ik == 0.0.3"
       - "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing"
       - "airo-spatial-algebra @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-spatial-algebra"
       - "airo-robots @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-robots"
