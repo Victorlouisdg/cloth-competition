@@ -44,7 +44,7 @@ jupyter notebook notebooks/01_getting_started.ipynb
 
 ## Development
 
-Use the `environmet-dev.yaml` file instead, then install the pre-commit hooks to ensure code quality:
+Use the `environment-dev.yaml` file instead, then install the pre-commit hooks to ensure code quality:
 ```
 pre-commit install
 ```
