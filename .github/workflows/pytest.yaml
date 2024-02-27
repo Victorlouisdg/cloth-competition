@@ -21,6 +21,10 @@ jobs:
           init-shell: bash
           cache-environment: true
           post-cleanup: 'all'
+      - name: Conda initialization (for Windows)
+        if: runner.os == 'Windows'
+        shell: bash -l {0}
+        run: conda init bash
       - name: Conda list
         shell: bash -l {0}
         run: conda list
