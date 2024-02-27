@@ -16,6 +16,9 @@ dependencies:
       - matplotlib
       - scipy
       - imageio
+      - pytest
+      - pre-commit
+      - mypy
       - "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing"
       - "airo-spatial-algebra @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-spatial-algebra"
       - "airo-robots @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-robots"
