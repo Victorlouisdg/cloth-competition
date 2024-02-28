@@ -6,7 +6,7 @@ Official repository for the [ICRA 2024 Cloth Competition :shirt:](https://airo.u
 
 *Link to the dataset will be provided soon.*
 
-For general questions about the compeition, please use our [Github Discussions page](https://github.com/Victorlouisdg/cloth-competition/discussions).
+For general questions about the competition, please use our [Github Discussions page](https://github.com/Victorlouisdg/cloth-competition/discussions).
 ## Getting started
 
 1. First complete the [installation](#installation) instructions.
