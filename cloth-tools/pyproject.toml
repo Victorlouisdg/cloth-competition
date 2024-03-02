@@ -21,7 +21,7 @@ dependencies = [
   "numpy",
   "click",
   "rerun-sdk",
-  "pydrake",
+  "drake",
   "tqdm",
   "requests",
   "airo-models >= 0.0.7",
