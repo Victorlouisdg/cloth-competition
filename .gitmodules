@@ -1,0 +1,3 @@
+[submodule "submodules/segment-anything"]
+	path = submodules/segment-anything
+	url = git@github.com:facebookresearch/segment-anything.git

@@ -1,0 +1,11 @@
+torch
+torchvision
+torchaudio
+opencv-python
+pycocotools
+matplotlib
+onnxruntime
+onnx
+flask
+Flask-Cors
+../../submodules/segment-anything
