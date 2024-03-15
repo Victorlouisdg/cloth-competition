@@ -12,7 +12,7 @@ The service is divided into two parts:
 
 Complete the [Installation 🔧](#installation-🔧) first.
 ### Starting the backend
-To start the backend, run the following command in the `evaluation_service` directory:
+To start the backend, run the following command in the `backend` directory:
 ```bash
 python server.py ../images
 ```
