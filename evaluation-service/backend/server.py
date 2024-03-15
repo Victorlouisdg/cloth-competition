@@ -1,43 +1,44 @@
 import argparse
-from flask import Flask, send_file, request, jsonify
-from flask_cors import CORS
 import sys
+
+from flask import Flask, jsonify, request, send_file
+from flask_cors import CORS
+
 sys.path.append("..")
-from segment_anything import sam_model_registry, SamPredictor
+import os
+
 import cv2
 import numpy as np
 import torch
-import os
+from segment_anything import SamPredictor, sam_model_registry
 
 app = Flask(__name__)
 CORS(app)  #
 
 
-
-
 def create_app(image_directory, predictor):
     # Define a route to serve images
-    @app.route('/images/<image_name>')
+    @app.route("/images/<image_name>")
     def get_image(image_name):
         # Construct the image path using the provided directory
-        image_path = f'{image_directory}/{image_name}'
-        return send_file(image_path, mimetype='image/jpeg')  # Adjust mimetype as per your image type
-    
-    @app.route('/api/images', methods=['GET'])
+        image_path = f"{image_directory}/{image_name}"
+        return send_file(image_path, mimetype="image/jpeg")  # Adjust mimetype as per your image type
+
+    @app.route("/api/images", methods=["GET"])
     def get_images():
         image_names = os.listdir(image_directory)
 
-        return jsonify({'images': image_names})
-    
-    @app.route('/api/coordinates', methods=['POST'])
+        return jsonify({"images": image_names})
+
+    @app.route("/api/coordinates", methods=["POST"])
     def get_coordinates():
         print("get_coordinates called")
         data = request.get_json()
-        x = data['x']
-        y = data['y']
-        image_name = data['imageName']
+        x = data["x"]
+        y = data["y"]
+        image_name = data["imageName"]
 
-        image = cv2.imread(f'{image_directory}/{image_name}')
+        image = cv2.imread(f"{image_directory}/{image_name}")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         predictor.set_image(image)
@@ -56,18 +57,18 @@ def create_app(image_directory, predictor):
         coords = np.where(masks[2])
         combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
 
-
         # Return the new coordinates as a response
-        return jsonify({'coordinates': combined_coords.tolist()})
+        return jsonify({"coordinates": combined_coords.tolist()})
 
     return app
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Run Flask server to serve images')
-    parser.add_argument('image_directory', type=str, help='Path to the directory containing images')
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run Flask server to serve images")
+    parser.add_argument("image_directory", type=str, help="Path to the directory containing images")
     args = parser.parse_args()
 
-    # TODO: use best model 
+    # TODO: use best model
     sam_checkpoint = "../weights/sam_vit_b_01ec64.pth"
     model_type = "vit_b"
 

@@ -19,7 +19,7 @@ Change to the `backend` directory
 Open a new terminal window and change to the `frontend` directory
 
 1. Install node from https://nodejs.org/en/download
-2. Install yarn with 
+2. Install yarn with
 ```
 curl -sS https://dl.yarnpkg.com/debian/pubkey.gpg | sudo apt-key add -
 echo "deb https://dl.yarnpkg.com/debian/ stable main" | sudo tee /etc/apt/sources.list.d/yarn.list
