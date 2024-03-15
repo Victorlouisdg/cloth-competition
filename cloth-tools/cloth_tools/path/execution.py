@@ -2,6 +2,67 @@ from typing import List, Tuple
 
 import numpy as np
 from airo_robots.manipulators.bimanual_position_manipulator import DualArmPositionManipulator
+from airo_typing import JointConfigurationType
+from pydrake.multibody.optimization import CalcGridPointsOptions, Toppra
+from pydrake.multibody.plant import MultibodyPlant
+from pydrake.trajectories import PiecewisePolynomial, Trajectory
+
+
+def time_parametrize_toppra(
+    dual_arm_joint_path: List[Tuple[JointConfigurationType, JointConfigurationType]],
+    plant: MultibodyPlant,
+    joint_speed_limit: float = 2.0,  # Max 180 degrees/s ~ 3.14 rad/s
+    joint_acceleration_limit: float = 4.0,  # UR recommends < 800 degrees/s^2 ~ 13.9 rad/s^2
+) -> Tuple[Trajectory, Trajectory]:
+    """Time-parametrize a dual arm joint path using TOPP-RA with a Drake plant, takes about ~ 35ms."""
+    n_dofs = 12
+    path = np.array(dual_arm_joint_path).reshape(-1, n_dofs)  # should be e.g. (500, 12)
+
+    times_dummy = np.linspace(0.0, 1.0, len(path))
+
+    # TODO: maybe we always want FirstOrderHold, because that's what e.g. OMPL assumes between configs?
+    if len(path) >= 3:
+        joint_trajectory = PiecewisePolynomial.CubicWithContinuousSecondDerivatives(times_dummy, path.T)
+    else:
+        joint_trajectory = PiecewisePolynomial.FirstOrderHold(times_dummy, path.T)
+
+    gridpoints = Toppra.CalcGridPoints(joint_trajectory, CalcGridPointsOptions())
+    toppra = Toppra(joint_trajectory, plant, gridpoints)
+    toppra.AddJointAccelerationLimit([-joint_acceleration_limit] * n_dofs, [joint_acceleration_limit] * n_dofs)
+    toppra.AddJointVelocityLimit([-joint_speed_limit] * n_dofs, [joint_speed_limit] * n_dofs)
+    time_trajectory = toppra.SolvePathParameterization()
+
+    return joint_trajectory, time_trajectory
+
+
+def execute_dual_arm_trajectory(
+    dual_arm: DualArmPositionManipulator, joint_trajectory: Trajectory, time_trajectory: Trajectory
+):
+    start_joints = joint_trajectory.value(time_trajectory.value(0).item()).squeeze()
+    start_joints_left = start_joints[0:6]
+    start_joints_right = start_joints[6:12]
+
+    ensure_dual_arm_at_joint_configuration(dual_arm, start_joints_left, start_joints_right)
+
+    period = 0.005
+    duration = time_trajectory.end_time()
+
+    n_servos = int(np.ceil(duration / period))
+    period_adjusted = duration / n_servos  # can be slightly different from period due to rounding
+
+    for t in np.linspace(0, duration, n_servos):
+        joints = joint_trajectory.value(time_trajectory.value(t).item()).squeeze()
+        joints_left = joints[0:6]
+        joints_right = joints[6:12]
+        left_servo = dual_arm.left_manipulator.servo_to_joint_configuration(joints_left, period_adjusted)
+        right_servo = dual_arm.right_manipulator.servo_to_joint_configuration(joints_right, period_adjusted)
+        left_servo.wait()
+        right_servo.wait()
+
+    # This avoids the abrupt stop and "thunk" sounds at the end of paths that end with non-zero velocity
+    # However, I believe these functions are blocking, so right only stops after left has stopped.
+    dual_arm.left_manipulator.rtde_control.servoStop(2.0)
+    dual_arm.right_manipulator.rtde_control.servoStop(2.0)
 
 
 def calculate_path_array_duration(path_array: np.ndarray, max_allowed_speed: float = 0.5) -> float:
@@ -103,15 +164,16 @@ def _servo_dual_arm_joint_path(
 
 
 def execute_dual_arm_joint_path(dual_arm, path, joint_speed=0.5):
-    duration = calculate_dual_path_duration(path, joint_speed)
+    raise NotImplementedError("This function is deceprated.")
+    # duration = calculate_dual_path_duration(path, joint_speed)
 
-    period = 0.005
-    n_servos = int(np.ceil(duration / period))
+    # period = 0.005
+    # n_servos = int(np.ceil(duration / period))
 
-    path_left = [joint_left for joint_left, _ in path]
-    path_right = [joint_right for _, joint_right in path]
-    path_left_resampled = resample_path(path_left, n_servos)
-    path_right_resampled = resample_path(path_right, n_servos)
-    path_resampled = list(zip(path_left_resampled, path_right_resampled))
+    # path_left = [joint_left for joint_left, _ in path]
+    # path_right = [joint_right for _, joint_right in path]
+    # path_left_resampled = resample_path(path_left, n_servos)
+    # path_right_resampled = resample_path(path_right, n_servos)
+    # path_resampled = list(zip(path_left_resampled, path_right_resampled))
 
-    _servo_dual_arm_joint_path(dual_arm, path_resampled, period)
+    # _servo_dual_arm_joint_path(dual_arm, path_resampled, period)

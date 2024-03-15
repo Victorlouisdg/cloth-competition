@@ -3,12 +3,12 @@ from typing import Tuple
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_camera_toolkit.point_clouds.conversions import open3d_to_point_cloud, point_cloud_to_open3d
 from airo_camera_toolkit.point_clouds.operations import filter_point_cloud
-from airo_typing import HomogeneousMatrixType, NumpyIntImageType, PointCloud
+from airo_typing import HomogeneousMatrixType, NumpyDepthMapType, NumpyIntImageType, PointCloud
 
 
 def get_image_and_filtered_point_cloud(
     camera: Zed2i, camera_pose: HomogeneousMatrixType
-) -> Tuple[NumpyIntImageType, PointCloud]:
+) -> Tuple[NumpyIntImageType, PointCloud, NumpyDepthMapType]:
     """Get an RGB image and a point cloud from the camera.
     Low confidence points are filtered out and the point cloud is transformed to the world frame.
 
@@ -22,6 +22,7 @@ def get_image_and_filtered_point_cloud(
     """
     image_rgb = camera.get_rgb_image_as_int()
     point_cloud_in_camera = camera._retrieve_colored_point_cloud()
+    depth_map = camera._retrieve_depth_map()
     confidence_map = camera._retrieve_confidence_map()
 
     # Transform the point cloud to the world frame
@@ -33,4 +34,4 @@ def get_image_and_filtered_point_cloud(
 
     point_cloud = open3d_to_point_cloud(pcd)
     point_cloud_filtered = filter_point_cloud(point_cloud, confidence_mask.nonzero())
-    return image_rgb, point_cloud_filtered
+    return image_rgb, depth_map, point_cloud_filtered

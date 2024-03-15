@@ -6,29 +6,22 @@
 name: cloth-competition
 channels:
   - conda-forge
-  - pytorch
-  - nvidia
 dependencies:
   - python=3.10
-  - pytorch
-  - torchvision
-  - pytorch-cuda=12.1
-  - ffmpeg>=6.1.0
-  - x265
   - opencv
   - jupyter
   - pip
   - pip:
-    - numpy
-    - matplotlib
-    - scipy
-    - wandb
-    - pytorch-lightning
-    - imageio
-    - albumentations
-    - timm
-    - pytest
-    - pre-commit
-    - mypy
-    - darglint
-    - -e cloth-tools/
+      - numpy
+      - matplotlib
+      - scipy
+      - imageio
+      - pytest
+      - pre-commit
+      - mypy
+      - "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing"
+      - "airo-spatial-algebra @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-spatial-algebra"
+      - "airo-camera-toolkit @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-camera-toolkit"
+      - "airo-dataset-tools @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-dataset-tools"
+      - "linen @ git+https://github.com/Victorlouisdg/linen@main#subdirectory=linen"
+      - -e cloth-tools/
