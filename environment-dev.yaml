@@ -31,6 +31,7 @@ dependencies:
       - pre-commit
       - mypy
       - darglint
+      - drake
       - "ffmpegcv"
       - "ur-analytic-ik == 0.0.3"
       - "airo-typing @ git+https://github.com/airo-ugent/airo-mono@main#subdirectory=airo-typing"
