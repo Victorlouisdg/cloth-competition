@@ -8,7 +8,6 @@ channels:
   - conda-forge
 dependencies:
   - python=3.10
-  - opencv
   - jupyter
   - pip
   - pip:

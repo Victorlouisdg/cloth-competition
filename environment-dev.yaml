@@ -6,27 +6,16 @@
 name: cloth-competition-dev
 channels:
   - conda-forge
-  - pytorch
-  - nvidia
 dependencies:
   - python=3.10
-  - pytorch
-  - torchvision
-  - pytorch-cuda=12.1
-  - ffmpeg>=6.1.0
+  - ffmpeg
   - x265
-  - opencv
   - jupyter
   - pip
   - pip:
       - numpy
       - matplotlib
       - scipy
-      - wandb
-      - pytorch-lightning
-      - imageio
-      - albumentations
-      - timm
       - pytest
       - pre-commit
       - mypy
