@@ -13,9 +13,8 @@ from airo_drake import (
     animate_dual_joint_trajectory,
     concatenate_drake_trajectories,
     finish_build,
-    time_parametrize_toppra,
 )
-from airo_planner import DualArmOmplPlanner, PlannerError, rank_by_distance_to_desirable_configurations, stack_joints
+from airo_planner import DualArmOmplPlanner, rank_by_distance_to_desirable_configurations, stack_joints
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
@@ -26,7 +25,6 @@ from airo_typing import (
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
-from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.scenes import (
     add_cloth_competition_dual_ur5e_scene,
@@ -34,6 +32,7 @@ from cloth_tools.drake.scenes import (
     add_safety_wall_to_builder,
 )
 from cloth_tools.kinematics.constants import TCP_TRANSFORM
+from cloth_tools.planning.grasp_planning import ExhaustedOptionsError, plan_pregrasp_and_grasp_trajectory
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation, inverse_kinematics_in_world_fn
@@ -41,7 +40,6 @@ from cloth_tools.stations.dual_arm_station import DualArmStation
 from cloth_tools.trajectory_execution import execute_dual_arm_drake_trajectory
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
-from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
 from pydrake.trajectories import Trajectory
@@ -178,20 +176,20 @@ class GraspLowestController(Controller):
     def execute_handover(self) -> None:
         dual_arm = self.station.dual_arm
 
-        # Execute the path to the pregrasp pose
-        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_pregrasp)
+        # Execute the grasp
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_pregrasp_and_grasp)
+        dual_arm.left_manipulator.gripper.close().wait()
 
         # Execute the grasp
-        dual_arm.move_linear_to_tcp_pose(self._grasp_pose, None, linear_speed=0.2).wait()
-        dual_arm.left_manipulator.gripper.close().wait()
-        dual_arm.move_linear_to_tcp_pose(self._pregrasp_pose, None, linear_speed=0.2).wait()
+        # dual_arm.move_linear_to_tcp_pose(self._grasp_pose, None, linear_speed=0.2).wait()
+        # dual_arm.move_linear_to_tcp_pose(self._pregrasp_pose, None, linear_speed=0.2).wait()
 
         # Open the right gripper of the cloth be released
-        dual_arm.right_manipulator.gripper.open().wait()
-        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_right_home)
+        # dual_arm.right_manipulator.gripper.open().wait()
+        # execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_right_home)
 
-        # Move the left arm to the hang pose
-        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_hang_left)
+        # # Move the left arm to the hang pose
+        # execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_hang_left)
 
     def _create_cloth_obstacle_planner(self, point_cloud_cloth: PointCloud) -> DualArmOmplPlanner:
         planner, scene, hull = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=False)
@@ -230,7 +228,7 @@ class GraspLowestController(Controller):
         logger.info(f"Found lowest point in bbox at: {lowest_point_}")
 
         planner_with_cloth_obstacle = self._create_cloth_obstacle_planner(point_cloud_cropped)
-        plant = self.station.drake_scene.robot_diagram.plant()  # For use with TOPP-RA
+        # plant = self.station.drake_scene.robot_diagram.plant()  # For use with TOPP-RA
 
         # Create planner with cloth obstacle
         dual_arm = self.station.dual_arm
@@ -246,98 +244,132 @@ class GraspLowestController(Controller):
         )
         planner_with_cloth_obstacle.rank_goal_configurations_fn = rank_fn
 
-        # Try moving pregrasp pose to several distances from the grasp pose
-        path_pregrasp = None  # To prevent UnboundLocalError
-        distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
-        for distance in distances_to_try:
-            logger.info(f"Planning to pregrasp pose at distance {distance}.")
-            pregrasp_pose = move_pose_backwards(grasp_pose, distance)
-            self._pregrasp_pose = pregrasp_pose
+        X_W_LCB = self.station.left_arm_pose
+        X_W_RCB = self.station.right_arm_pose
 
-            try:
-                path_pregrasp = planner_with_cloth_obstacle.plan_to_tcp_pose(
-                    start_joints_left,
-                    start_joints_right,
-                    pregrasp_pose,
-                    None,
-                    # desirable_goal_configurations_left=[
-                    #     self.station.home_joints_left
-                    # ],
-                )
-                break
-            except PlannerError:
-                logger.info(f"No path found to pregrasp pose with distance {distance}.")
-                continue
+        inverse_kinematics_left_fn = partial(
+            inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB, tcp_transform=TCP_TRANSFORM
+        )
+        inverse_kinematics_right_fn = partial(
+            inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB, tcp_transform=TCP_TRANSFORM
+        )
 
-        if path_pregrasp is None:
-            logger.warning("Failed to create path to any of the tried pregrasp poses.")
-            self._trajectory_pregrasp = None
-            self._trajectory_right_home = None
-            self._trajectory_hang_left = None
+        plant_default = self.station.drake_scene.robot_diagram.plant()
+        is_state_valid_fn_default = self.station.planner.is_state_valid_fn
+
+        try:
+            trajectory = plan_pregrasp_and_grasp_trajectory(
+                planner_with_cloth_obstacle,
+                grasp_pose,
+                start_joints_left,
+                start_joints_right,
+                inverse_kinematics_left_fn,
+                inverse_kinematics_right_fn,
+                is_state_valid_fn_default,
+                plant_default,
+                with_left=False,
+            )
+        except ExhaustedOptionsError as e:
+            logger.warning(f"Failed to plan grasp. Exception was:\n {e}.")
+            self._grasp_info = None
+            self._grasp_pose = None
+            self._trajectory_pregrasp_and_grasp = None
             return
 
-        trajectory_pregrasp = time_parametrize_toppra(plant, path_pregrasp)
-        self._trajectory_pregrasp = trajectory_pregrasp
+        self._trajectory_pregrasp_and_grasp = trajectory
+
+        # Try moving pregrasp pose to several distances from the grasp pose
+        # path_pregrasp = None  # To prevent UnboundLocalError
+        # distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
+        # for distance in distances_to_try:
+        #     logger.info(f"Planning to pregrasp pose at distance {distance}.")
+        #     pregrasp_pose = move_pose_backwards(grasp_pose, distance)
+        #     self._pregrasp_pose = pregrasp_pose
+
+        #     try:
+        #         path_pregrasp = planner_with_cloth_obstacle.plan_to_tcp_pose(
+        #             start_joints_left,
+        #             start_joints_right,
+        #             pregrasp_pose,
+        #             None,
+        #             # desirable_goal_configurations_left=[
+        #             #     self.station.home_joints_left
+        #             # ],
+        #         )
+        #         break
+        #     except PlannerError as e:
+        #         logger.info(f"No path found to pregrasp pose with distance {distance}, error {e}.")
+        #         continue
+
+        # if path_pregrasp is None:
+        #     logger.warning("Failed to create path to any of the tried pregrasp poses.")
+        #     self._trajectory_pregrasp = None
+        #     self._trajectory_right_home = None
+        #     self._trajectory_hang_left = None
+        #     return
+
+        # trajectory_pregrasp = time_parametrize_toppra(plant, path_pregrasp)
+        # self._trajectory_pregrasp = trajectory_pregrasp
 
         # Here the right arm opens its gripper and moves to its home position
         # Plan for the right arm to move home (don't consider obstacles)
-        planner = self.station.planner
+        self.station.planner
 
         # we moveL back to the pregrasp pose after grasping
-        pregrasp_joints_left = path_pregrasp[-1][:6]
+        # pregrasp_joints_left = path_pregrasp[-1][:6]
 
-        home_joints_right = self.station.home_joints_right
-        path_home_right = planner.plan_to_joint_configuration(
-            pregrasp_joints_left, start_joints_right, None, home_joints_right
-        )
-        trajectory_right_home = time_parametrize_toppra(plant, path_home_right)
+        # home_joints_right = self.station.home_joints_right
+        # path_home_right = planner.plan_to_joint_configuration(
+        #     pregrasp_joints_left, start_joints_right, None, home_joints_right
+        # )
+        # trajectory_right_home = time_parametrize_toppra(plant, path_home_right)
 
-        self._trajectory_right_home = trajectory_right_home
+        # self._trajectory_right_home = trajectory_right_home
 
-        home_joints_wrist_flipped_left = self.station.home_joints_left.copy()
-        home_joints_wrist_flipped_left[5] = -home_joints_wrist_flipped_left[5]
+        # home_joints_wrist_flipped_left = self.station.home_joints_left.copy()
+        # home_joints_wrist_flipped_left[5] = -home_joints_wrist_flipped_left[5]
 
-        desirable_configurations_hang = [stack_joints(self.station.home_joints_left, home_joints_wrist_flipped_left)]
-        rank_fn_hang = partial(
-            rank_by_distance_to_desirable_configurations, desirable_configurations=desirable_configurations_hang
-        )
+        # desirable_configurations_hang = [stack_joints(self.station.home_joints_left, home_joints_wrist_flipped_left)]
+        # rank_fn_hang = partial(
+        #     rank_by_distance_to_desirable_configurations, desirable_configurations=desirable_configurations_hang
+        # )
 
-        old_rank_fn = planner.rank_goal_configurations_fn
-        planner.rank_goal_configurations_fn = rank_fn_hang
+        # old_rank_fn = planner.rank_goal_configurations_fn
+        # planner.rank_goal_configurations_fn = rank_fn_hang
 
-        # Plan for the left arm to move to the hang pose
-        hang_pose = hang_in_the_air_tcp_pose(left=True)
-        path_hang_left = planner.plan_to_tcp_pose(
-            pregrasp_joints_left,
-            home_joints_right,
-            hang_pose,
-            None,
-            # desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
-        )
+        # # Plan for the left arm to move to the hang pose
+        # hang_pose = hang_in_the_air_tcp_pose(left=True)
+        # path_hang_left = planner.plan_to_tcp_pose(
+        #     pregrasp_joints_left,
+        #     home_joints_right,
+        #     hang_pose,
+        #     None,
+        #     # desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
+        # )
 
-        # reset this for future controller that might use it, might be better to have a separate planner for each controller
-        planner.rank_goal_configurations_fn = old_rank_fn
+        # # reset this for future controller that might use it, might be better to have a separate planner for each controller
+        # planner.rank_goal_configurations_fn = old_rank_fn
 
-        self._path_hang_left = path_hang_left
+        # self._path_hang_left = path_hang_left
 
-        # Limit the acceleration of the joints to avoid the cloth swinging too much
-        trajectory_hang_left = time_parametrize_toppra(plant, path_hang_left, joint_acceleration_limit=0.5)
-        self._trajectory_hang_left = trajectory_hang_left
+        # # Limit the acceleration of the joints to avoid the cloth swinging too much
+        # trajectory_hang_left = time_parametrize_toppra(plant, path_hang_left, joint_acceleration_limit=0.5)
+        # self._trajectory_hang_left = trajectory_hang_left
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
-        if self._trajectory_pregrasp is None:
+        if self._trajectory_pregrasp_and_grasp is None:
             return False
 
-        if self._trajectory_right_home is None:
-            return False
+        # if self._trajectory_right_home is None:
+        #     return False
 
-        if self._trajectory_hang_left is None:
-            return False
+        # if self._trajectory_hang_left is None:
+        #     return False
 
         return True
 
-    def visualize_plan(self) -> tuple[OpenCVIntImageType, Any]:
+    def visualize_plan(self, ask_user_input=True) -> tuple[OpenCVIntImageType, Any]:
         if self._image is None:
             raise RuntimeError("You must call plan() before visualize_plan().")
 
@@ -403,7 +435,7 @@ class GraspLowestController(Controller):
             rr.log("world/hull", rr_mesh)
 
         # Duplicated from GraspHighestController
-        if self._can_execute():
+        if self._can_execute() and ask_user_input:
             image_annotated = image.copy()
             text = "Execute? Press (y/n)"
             cv2.putText(image_annotated, text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3, cv2.LINE_AA)
@@ -451,6 +483,7 @@ class GraspLowestController(Controller):
             # Autonomous execution
             while not self._can_execute():
                 self.plan()
+                self.visualize_plan(ask_user_input=False)
             self.execute_plan()
 
         # Close cv2 window to reduce clutter

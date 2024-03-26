@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 from typing import Tuple
 
@@ -51,11 +52,19 @@ def setup_dual_arm_ur5e_in_world(
     Returns:
         The initialized dual arm.
     """
-    gripper_left = Robotiq2F85(ip_address_left)
-    robot_left = URrtde(ip_address_left, URrtde.UR3E_CONFIG, gripper_left)
+    max_attempts = 3
+    for i in range(max_attempts):
+        try:
+            gripper_left = Robotiq2F85(ip_address_left)
+            robot_left = URrtde(ip_address_left, URrtde.UR3E_CONFIG, gripper_left)
 
-    gripper_right = Robotiq2F85(ip_address_right)
-    robot_right = URrtde(ip_address_right, URrtde.UR3E_CONFIG, gripper_right)
+            gripper_right = Robotiq2F85(ip_address_right)
+            robot_right = URrtde(ip_address_right, URrtde.UR3E_CONFIG, gripper_right)
 
-    dual_arm = DualArmPositionManipulator(robot_left, X_W_LCB, robot_right, X_W_RCB)
-    return dual_arm
+            dual_arm = DualArmPositionManipulator(robot_left, X_W_LCB, robot_right, X_W_RCB)
+            return dual_arm
+        except RuntimeError as e:
+            print(f"Failed to connect to UR5e robots. Attempt {i+1}/{max_attempts}. Error:\n {e}")
+            if i == max_attempts - 1:
+                raise e
+            time.sleep(2)
