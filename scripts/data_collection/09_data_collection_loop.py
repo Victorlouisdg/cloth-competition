@@ -13,6 +13,7 @@ from cloth_tools.controllers.stretch_controller import StretchController
 from cloth_tools.dataset.bookkeeping import ensure_dataset_dir, find_highest_suffix
 from cloth_tools.dataset.format import CompetitionObservation, save_competition_observation
 from cloth_tools.motion_blur_detector import MotionBlurDetector
+from cloth_tools.point_clouds.cloth_detection import sufficient_points_in_bbox
 from cloth_tools.stations.competition_station import CompetitionStation
 from loguru import logger
 
@@ -101,24 +102,37 @@ if __name__ == "__main__":
         video_recorder.start()
 
         # Move the arms to their home positions
-        home_controller = HomeController(station)
-        home_controller.execute(interactive=False)
+        while True:
+            home_controller = HomeController(station)
+            home_controller.execute(interactive=False)
 
-        dual_arm.left_manipulator.rtde_control.zeroFtSensor()
-        dual_arm.right_manipulator.rtde_control.zeroFtSensor()
+            dual_arm.left_manipulator.rtde_control.zeroFtSensor()
+            dual_arm.right_manipulator.rtde_control.zeroFtSensor()
 
-        # Start of new episode
-        grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
-        grasp_highest_controller.execute(interactive=True)
+            # Start of new episode
+            grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
+            grasp_highest_controller.execute(interactive=True)
 
-        motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
-        motion_blur_detector.wait_for_blur_to_stabilize()
+            motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+            motion_blur_detector.wait_for_blur_to_stabilize()
 
-        grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
-        grasp_lowest_controller.execute(interactive=False)
+            if not sufficient_points_in_bbox(station, BBOX_CLOTH_IN_THE_AIR):
+                logger.warning("No cloth in the air, going back home to restart")
+                home_controller.execute(interactive=False)
+                continue
 
-        motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
-        motion_blur_detector.wait_for_blur_to_stabilize(timeout=20)
+            grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
+            grasp_lowest_controller.execute(interactive=False)
+
+            motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
+            motion_blur_detector.wait_for_blur_to_stabilize(timeout=20)
+
+            if sufficient_points_in_bbox(station, BBOX_CLOTH_IN_THE_AIR):
+                break
+            else:
+                logger.warning("No cloth in the air, going back home to restart")
+                home_controller.execute(interactive=False)
+                continue
 
         # Save competition input data here
         observation_start_dir = str(sample_dir / "observation_start")

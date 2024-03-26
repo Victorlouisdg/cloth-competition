@@ -17,7 +17,7 @@ from cloth_tools.controllers.grasp_lowest_controller import create_cloth_obstacl
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.kinematics.constants import TCP_TRANSFORM
 from cloth_tools.kinematics.inverse_kinematics import inverse_kinematics_in_world_fn
-from cloth_tools.planning.grasp_planning import plan_pregrasp_and_grasp_trajectory
+from cloth_tools.planning.grasp_planning import ExhaustedOptionsError, plan_pregrasp_and_grasp_trajectory
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
@@ -144,10 +144,11 @@ class GraspHangingController(Controller):
                 plant_default,
                 with_left=False,
             )
-        except Exception as e:
+        except ExhaustedOptionsError as e:
             logger.warning(f"Failed to plan grasp. Exception was:\n {e}.")
             self._grasp_info = None
             self._grasp_pose = None
+            self._trajectory_pregrasp_and_grasp = None
             return
 
         self._trajectory_pregrasp_and_grasp = trajectory
@@ -267,7 +268,8 @@ class GraspHangingController(Controller):
             self.execute_interactive()
         else:
             # Autonomous execution
-            self.plan()
+            while not self._can_execute():
+                self.plan()
             self.execute_plan()
 
         # Close cv2 window to reduce clutter

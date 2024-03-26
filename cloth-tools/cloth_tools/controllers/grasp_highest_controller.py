@@ -1,5 +1,6 @@
 import sys
 import time
+from functools import partial
 from typing import Any, Tuple
 
 import cv2
@@ -8,7 +9,7 @@ import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_drake import animate_dual_joint_trajectory, concatenate_drake_trajectories, time_parametrize_toppra
-from airo_planner import PlannerError
+from airo_planner import PlannerError, rank_by_distance_to_desirable_configurations, stack_joints
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
@@ -195,8 +196,18 @@ class GraspHighestController(Controller):
         self._hang_tcp_pose = hang_in_the_air_tcp_pose(left=False)
 
         try:
+            desirable_configurations_hang = [
+                stack_joints(self.station.home_joints_left, self.station.home_joints_right)
+            ]
+            rank_fn_hang = partial(
+                rank_by_distance_to_desirable_configurations, desirable_configurations=desirable_configurations_hang
+            )
+            old_rank_fn = planner.rank_goal_configurations_fn
+            planner.rank_goal_configurations_fn = rank_fn_hang
+
             path_hang = planner.plan_to_tcp_pose(start_joints_left, pregrasp_joints_right, None, self._hang_tcp_pose)
         except PlannerError as e:
+            planner.rank_goal_configurations_fn = old_rank_fn
             logger.warning(f"Failed to plan hang path: {e}")
             return
 
@@ -297,8 +308,8 @@ class GraspHighestController(Controller):
             self.execute_interactive()
         else:
             # Autonomous execution
-            self.plan()
-            self.visualize_plan()
+            while not self._can_execute():
+                self.plan()
             self.execute_plan()
 
         # Close cv2 window to reduce clutter

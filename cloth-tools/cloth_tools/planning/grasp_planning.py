@@ -20,6 +20,10 @@ from pydrake.multibody.plant import MultibodyPlant
 from pydrake.trajectories import PiecewisePose, Trajectory
 
 
+class ExhaustedOptionsError(RuntimeError):
+    pass
+
+
 # TODO consider making a class for this that stores debug information
 def plan_pregrasp_and_grasp_trajectory(  # noqa: C901
     planner_pregrasp: DualArmOmplPlanner,
@@ -143,4 +147,4 @@ def plan_pregrasp_and_grasp_trajectory(  # noqa: C901
 
         return pregrasp_and_grasp_trajectory
 
-    raise RuntimeError("Grasp planner exhausted all pregrasp poses to try")
+    raise ExhaustedOptionsError("Grasp planner exhausted all pregrasp poses to try")

@@ -449,8 +449,8 @@ class GraspLowestController(Controller):
             self.execute_interactive()
         else:
             # Autonomous execution
-            self.plan()
-            # self.visualize_plan()
+            while not self._can_execute():
+                self.plan()
             self.execute_plan()
 
         # Close cv2 window to reduce clutter

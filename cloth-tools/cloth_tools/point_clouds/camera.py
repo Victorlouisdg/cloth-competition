@@ -8,7 +8,7 @@ from airo_typing import HomogeneousMatrixType, NumpyDepthMapType, NumpyIntImageT
 
 def get_image_and_filtered_point_cloud(
     camera: Zed2i, camera_pose: HomogeneousMatrixType
-) -> Tuple[NumpyIntImageType, PointCloud, NumpyDepthMapType]:
+) -> Tuple[NumpyIntImageType, NumpyDepthMapType, PointCloud]:
     """Get an RGB image and a point cloud from the camera.
     Low confidence points are filtered out and the point cloud is transformed to the world frame.
 

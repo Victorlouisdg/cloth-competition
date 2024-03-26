@@ -64,30 +64,31 @@ class CompetitionStation(DualArmStation):
         }
         self.camera_publisher = None
 
-        # for i in range(5):
-        #     try:
-        if create_multiprocess_camera:
-            # if i == 0:
-            multiprocessing.set_start_method("spawn")
+        for i in range(5):
+            logger.info(f"Initializing camera... (attempt: {i})")
+            if create_multiprocess_camera:
+                if i == 0:
+                    multiprocessing.set_start_method("spawn")
 
-            # Running the camera in a seperate process enables us to record videos even if the main process is blocking
-            self.camera_publisher = MultiprocessStereoRGBDPublisher(Zed2i, camera_kwargs)
-            # self.camera_publisher.publish_depth_image = False
+                # Running the camera in a seperate process enables us to record videos even if the main process is blocking
+                self.camera_publisher = MultiprocessStereoRGBDPublisher(Zed2i, camera_kwargs)
+                self.camera_publisher.start()
+                camera = MultiprocessStereoRGBDReceiver("camera")
+            else:
+                camera = Zed2i(**camera_kwargs)
 
-            self.camera_publisher.start()
-            camera = MultiprocessStereoRGBDReceiver("camera")
-        else:
-            camera = Zed2i(**camera_kwargs)
-
-        check_zed_point_cloud_completeness(camera)
-        # except RuntimeError as e:
-        #     logger.warning(f"Failed to initialize camera. Retrying... {i}")
-        #     logger.warning(e)
-        #     if self.camera_publisher is not None:
-        #         self.camera_publisher.stop()
-        #         self.camera_publisher.join()
-        #     if i == 4:
-        #         raise e
+            try:
+                check_zed_point_cloud_completeness(camera)
+                break
+            except RuntimeError as e:
+                logger.error("Failed to initialize camera. Retrying...")
+                logger.warning(e)
+                if self.camera_publisher is not None:
+                    self.camera_publisher.stop()
+                    self.camera_publisher.join()
+                    del camera
+                if i == 4:
+                    raise e
 
         # Image crop used to check motion blur of hanging cloth
         # Note that parts of the cloth may be outside the crop
@@ -127,7 +128,7 @@ class CompetitionStation(DualArmStation):
         plant.SetPositions(plant_context, self.drake_scene.arm_right_index, current_joints_right)
         robot_diagram.ForcedPublish(context)
 
-        logger.info("CompetitionStation initialized.")
+        logger.success("CompetitionStation initialized.")
 
     def __del__(self):
         if self.camera_publisher is not None:
