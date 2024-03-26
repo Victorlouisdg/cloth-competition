@@ -1,27 +1,29 @@
 import sys
+from functools import partial
 from pathlib import Path
-from typing import Any, Optional, Tuple
+from typing import Any, Tuple
 
 import cv2
-import numpy as np
 import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from airo_drake import DualArmScene, animate_dual_joint_trajectory
+from airo_planner import DualArmOmplPlanner
 from airo_typing import BoundingBox3DType, HomogeneousMatrixType, OpenCVIntImageType, PointCloud
 from cloth_tools.annotation.grasp_annotation import get_manual_grasp_annotation, save_grasp_info
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.grasp_lowest_controller import create_cloth_obstacle_planner
 from cloth_tools.controllers.home_controller import HomeController
-from cloth_tools.drake.visualization import publish_dual_arm_trajectory, publish_ik_solutions
-from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
+from cloth_tools.kinematics.constants import TCP_TRANSFORM
+from cloth_tools.kinematics.inverse_kinematics import inverse_kinematics_in_world_fn
+from cloth_tools.planning.grasp_planning import plan_pregrasp_and_grasp_trajectory
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
-from cloth_tools.trajectory_execution import execute_dual_arm_trajectory, time_parametrize_toppra
+from cloth_tools.trajectory_execution import execute_dual_arm_drake_trajectory
 from cloth_tools.visualization.opencv import draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
-from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 
 import open3d as o3d  # isort:skip
@@ -34,8 +36,6 @@ class GraspHangingController(Controller):
     Currently always uses the left arm to grasp.
     """
 
-    GOOD_GRASP_JOINTS_RIGHT_0 = np.deg2rad([-124, -124, -75.5, -164, 56, 180])  # recorded in freedrive
-
     def __init__(self, station: DualArmStation, bbox: BoundingBox3DType, sample_dir: str = None):
         self.station = station
         self.bbox = bbox
@@ -43,24 +43,17 @@ class GraspHangingController(Controller):
         self.sample_dir = sample_dir  # Quick fix for data collection, saving grasp will be done elsewhere later
 
         # Attributes that will be set in plan()
-        self._image: Optional[OpenCVIntImageType] = None
-        self._grasp_pose: Optional[HomogeneousMatrixType] = None
-        self._point_cloud: Optional[PointCloud] = None
-        self._pregrasp_pose: Optional[HomogeneousMatrixType] = None
-        self._path_pregrasp: Optional[Any] = None
-        self._trajectory_pregrasp: Optional[Any] = None
-        self._time_trajectory_pregrasp: Optional[Any] = None
+        self._image: OpenCVIntImageType | None = None
+        self._grasp_pose: HomogeneousMatrixType | None = None
+        self._point_cloud: PointCloud | None = None
+        self._pregrasp_pose: HomogeneousMatrixType | None = None
 
-        self._hull: Optional[o3d.t.geometry.TriangleMesh] = None
-        self._planner_cloth: Optional[DualArmOmplPlanner] = None
-        self._start_joints_left: Optional[Any] = None
+        self._trajectory_pregrasp_and_grasp: Any | None = None
 
-        self._diagram: Optional[Any] = None
-        self._context: Optional[Any] = None
-        self._collision_checker: Optional[Any] = None
-        self._meshcat: Optional[Any] = None
-        self._arm_indices: Optional[Tuple[int, int]] = None
-        self._gripper_indices: Optional[Tuple[int, int]] = None
+        self._hull: o3d.t.geometry.TriangleMesh | None = None
+        self._drake_scene: DualArmScene | None = None
+        self._planner_with_cloth_obstacle: DualArmOmplPlanner | None = None
+        # self._start_joints_left: Any | None = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -79,24 +72,10 @@ class GraspHangingController(Controller):
         rr.log("world/bbox", rr_bbox)
 
     def _create_cloth_obstacle_planner(self, point_cloud_cloth: PointCloud) -> DualArmOmplPlanner:
-        (
-            planner,
-            hull,
-            diagram,
-            context,
-            collision_checker,
-            meshcat,
-            arm_indices,
-            gripper_indices,
-        ) = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=True)
-        # Save all this for visualization
+        planner, scene, hull = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=True)
+        # Save this for visualization
         self._hull = hull
-        self._diagram = diagram
-        self._context = context
-        self._collision_checker = collision_checker
-        self._meshcat = meshcat
-        self._arm_indices = arm_indices
-        self._gripper_indices = gripper_indices
+        self._drake_scene = scene
 
         return planner
 
@@ -128,16 +107,12 @@ class GraspHangingController(Controller):
         self._grasp_pose = grasp_pose
 
         if grasp_pose is None:
-            logger.info("Recieved no grasp pose.")
-            self._pregrasp_pose = None
-            self._path_pregrasp = None
-            self._trajectory_pregrasp = None
-            self._time_trajectory_pregrasp = None
+            logger.warn("Recieved no grasp pose.")
             return
 
         # DETERMINE GRASP POSE HERE
         planner_cloth = self._create_cloth_obstacle_planner(point_cloud_cropped)
-        self._planner_cloth = planner_cloth  # Save for debugging
+        self._planner_with_cloth_obstacle = planner_cloth  # Save for debugging
 
         # Create planner with cloth obstacle
 
@@ -145,44 +120,35 @@ class GraspHangingController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        # Try moving pregrasp pose to several distances from the grasp pose
-        distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
-        for d in distances_to_try:
-            pregrasp_pose = move_pose_backwards(grasp_pose, d)
-            self._pregrasp_pose = pregrasp_pose
+        X_W_LCB = station.left_arm_pose
+        X_W_RCB = station.right_arm_pose
 
-            self._start_joints_left = start_joints_left
+        inverse_kinematics_left_fn = partial(
+            inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB, tcp_transform=TCP_TRANSFORM
+        )
+        inverse_kinematics_right_fn = partial(
+            inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB, tcp_transform=TCP_TRANSFORM
+        )
 
-            path_pregrasp = planner_cloth.plan_to_tcp_pose(
+        plant_default = self.station.drake_scene.robot_diagram.plant()
+        is_state_valid_fn_default = self.station.planner.is_state_valid_fn
+
+        try:
+            trajectory = plan_pregrasp_and_grasp_trajectory(
+                planner_cloth,
+                grasp_pose,
                 start_joints_left,
                 start_joints_right,
-                None,
-                pregrasp_pose,
-                desirable_goal_configurations_right=[
-                    self.GOOD_GRASP_JOINTS_RIGHT_0,
-                ],  # Try to avoid the shoulder from pointing towards the camera
+                inverse_kinematics_left_fn,
+                inverse_kinematics_right_fn,
+                is_state_valid_fn_default,
+                plant_default,
+                with_left=False,
             )
-            self._path_pregrasp = path_pregrasp
+        except Exception as e:
+            logger.warn(f"Failed to plan grasp. Exception was:\n {e}.")
 
-            if path_pregrasp is not None:
-                logger.info(f"Found path to pregrasp pose with distance {d}.")
-
-                trajectory_pregrasp, time_trajectory_pregrasp = time_parametrize_toppra(
-                    path_pregrasp, self._diagram.plant()
-                )
-                self._trajectory_pregrasp = trajectory_pregrasp
-                self._time_trajectory_pregrasp = time_trajectory_pregrasp
-                break
-            else:
-                logger.info(f"No path to pregrasp pose with distance {d}.")
-
-        if path_pregrasp is None:
-            logger.info("No path to any of the tried pregrasp poses found.")
-            # Maybe reset all state at the beginning of each plan call?
-            self._path_pregrasp = None
-            self._trajectory_pregrasp = None
-            self._time_trajectory_pregrasp = None
-            return
+        self._trajectory_pregrasp_and_grasp = trajectory
 
     def execute_grasp(self) -> None:
         if self.sample_dir is not None:
@@ -195,15 +161,14 @@ class GraspHangingController(Controller):
         dual_arm = self.station.dual_arm
 
         # Execute the path to the pregrasp pose
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_pregrasp, self._time_trajectory_pregrasp)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_pregrasp_and_grasp)
 
         # Execute the grasp
-        dual_arm.move_linear_to_tcp_pose(None, self._grasp_pose, linear_speed=0.2).wait()
         dual_arm.right_manipulator.gripper.close().wait()
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
-        if self._path_pregrasp is None:
+        if self._trajectory_pregrasp_and_grasp is None:
             return False
 
         return True
@@ -223,44 +188,15 @@ class GraspHangingController(Controller):
             rr_grasp_pose = rr.Transform3D(translation=grasp_pose[0:3, 3], mat3x3=grasp_pose[0:3, 0:3])
             rr.log("world/grasp_pose", rr_grasp_pose)
 
-        if self._pregrasp_pose is not None:
-            pregrasp_pose = self._pregrasp_pose
-            # draw_pose(image, pregrasp_pose, intrinsics, camera_pose)
-
-            rr_pregrasp_pose = rr.Transform3D(translation=pregrasp_pose[0:3, 3], mat3x3=pregrasp_pose[0:3, 0:3])
-            rr.log("world/pregrasp_pose", rr_pregrasp_pose)
-
-        if self._path_pregrasp is not None:
-            trajectory = self._trajectory_pregrasp
-            time_trajectory = self._time_trajectory_pregrasp
-            publish_dual_arm_trajectory(
-                trajectory,
-                time_trajectory,
-                self._meshcat,
-                self._diagram,
-                self._context,
-                *self._arm_indices,
+        if self._trajectory_pregrasp_and_grasp is not None:
+            scene = self._drake_scene
+            animate_dual_joint_trajectory(
+                scene.meshcat,
+                scene.robot_diagram,
+                scene.arm_left_index,
+                scene.arm_right_index,
+                self._trajectory_pregrasp_and_grasp,
             )
-        else:
-            # Publish IK solutions for debugging
-            if self._planner_cloth is not None:
-                if self._planner_cloth._single_arm_planner_right is not None:
-                    if self._planner_cloth._single_arm_planner_right._ik_solutions is not None:
-                        logger.info("Publishing IK solutions for right arm.")
-
-                        # Set positiosn of left arm first
-                        plant = self._diagram.plant()
-                        plant_context = plant.GetMyContextFromRoot(self._context)
-                        plant.SetPositions(plant_context, self._arm_indices[0], self._start_joints_left)
-
-                        publish_ik_solutions(
-                            self._planner_cloth._single_arm_planner_right._ik_solutions,
-                            2.0,
-                            self._meshcat,
-                            self._diagram,
-                            self._context,
-                            self._arm_indices[1],
-                        )
 
         if self._point_cloud is not None:
             point_cloud = self._point_cloud
@@ -297,7 +233,6 @@ class GraspHangingController(Controller):
             return image, cv2.waitKey(0)
 
     def execute_plan(self) -> None:
-        # TODO bring execute_handover() here
         if self._grasp_pose is None:
             logger.info("Grasp not executed because no grasp pose was found.")
             return
@@ -331,7 +266,6 @@ class GraspHangingController(Controller):
         else:
             # Autonomous execution
             self.plan()
-            # self.visualize_plan()
             self.execute_plan()
 
         # Close cv2 window to reduce clutter
