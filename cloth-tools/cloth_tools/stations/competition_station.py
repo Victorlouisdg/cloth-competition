@@ -64,7 +64,10 @@ class CompetitionStation(DualArmStation):
         }
         self.camera_publisher = None
 
+        # for i in range(5):
+        #     try:
         if create_multiprocess_camera:
+            # if i == 0:
             multiprocessing.set_start_method("spawn")
 
             # Running the camera in a seperate process enables us to record videos even if the main process is blocking
@@ -77,6 +80,14 @@ class CompetitionStation(DualArmStation):
             camera = Zed2i(**camera_kwargs)
 
         check_zed_point_cloud_completeness(camera)
+        # except RuntimeError as e:
+        #     logger.warning(f"Failed to initialize camera. Retrying... {i}")
+        #     logger.warning(e)
+        #     if self.camera_publisher is not None:
+        #         self.camera_publisher.stop()
+        #         self.camera_publisher.join()
+        #     if i == 4:
+        #         raise e
 
         # Image crop used to check motion blur of hanging cloth
         # Note that parts of the cloth may be outside the crop
@@ -129,7 +140,7 @@ class CompetitionStation(DualArmStation):
         robot_diagram_builder = RobotDiagramBuilder()
 
         meshcat = add_meshcat(robot_diagram_builder)
-        meshcat.SetCameraPose([-2.0, 0, 1.0], [0, 0, 0])
+        meshcat.SetCameraPose([-1.0, 0, 1.0], [0, 0, 0])
 
         (arm_left_index, arm_right_index), (
             gripper_left_index,

@@ -102,6 +102,7 @@ class GraspHighestController(Controller):
         self._point_cloud: PointCloud | None = None
         self._highest_point: Vector3DType | None = None
         ##  Planned trajectories
+        self._hang_tcp_pose: HomogeneousMatrixType | None = None
         self._trajectory_pregrasp: Trajectory | None = None
         self._trajectory_hang: Trajectory | None = None
 
@@ -178,7 +179,7 @@ class GraspHighestController(Controller):
         try:
             path_pregrasp = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
         except PlannerError as e:
-            logger.warn(f"Failed to plan pregrasp path: {e}")
+            logger.warning(f"Failed to plan pregrasp path: {e}")
             return
 
         drake_plant = self.station.drake_scene.robot_diagram.plant()
@@ -196,7 +197,7 @@ class GraspHighestController(Controller):
         try:
             path_hang = planner.plan_to_tcp_pose(start_joints_left, pregrasp_joints_right, None, self._hang_tcp_pose)
         except PlannerError as e:
-            logger.warn(f"Failed to plan hang path: {e}")
+            logger.warning(f"Failed to plan hang path: {e}")
             return
 
         # Lower joint acceleration limit to avoid swinging

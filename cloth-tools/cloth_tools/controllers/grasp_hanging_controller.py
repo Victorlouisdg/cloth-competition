@@ -107,10 +107,9 @@ class GraspHangingController(Controller):
         self._grasp_pose = grasp_pose
 
         if grasp_pose is None:
-            logger.warn("Recieved no grasp pose.")
+            logger.warning("Recieved no grasp pose.")
             return
 
-        # DETERMINE GRASP POSE HERE
         planner_cloth = self._create_cloth_obstacle_planner(point_cloud_cropped)
         self._planner_with_cloth_obstacle = planner_cloth  # Save for debugging
 
@@ -120,8 +119,8 @@ class GraspHangingController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        X_W_LCB = station.left_arm_pose
-        X_W_RCB = station.right_arm_pose
+        X_W_LCB = self.station.left_arm_pose
+        X_W_RCB = self.station.right_arm_pose
 
         inverse_kinematics_left_fn = partial(
             inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB, tcp_transform=TCP_TRANSFORM
@@ -146,7 +145,10 @@ class GraspHangingController(Controller):
                 with_left=False,
             )
         except Exception as e:
-            logger.warn(f"Failed to plan grasp. Exception was:\n {e}.")
+            logger.warning(f"Failed to plan grasp. Exception was:\n {e}.")
+            self._grasp_info = None
+            self._grasp_pose = None
+            return
 
         self._trajectory_pregrasp_and_grasp = trajectory
 

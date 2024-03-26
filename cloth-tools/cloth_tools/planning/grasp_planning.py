@@ -34,7 +34,12 @@ def plan_pregrasp_and_grasp_trajectory(  # noqa: C901
 ) -> tuple[Trajectory]:
 
     # We add 1.0 so at least one pregrasp distance fails:
-    pregrasp_distances_to_try = [0.05, 0.1, 0.15]  # , 0.2, 0.25]
+    # pregrasp_distances_to_try = [0.05, 0.1, 0.15]  # , 0.2, 0.25]
+    distance_min = 0.05
+    distance_max = 0.25
+    step = 0.01
+    steps = int(np.rint((distance_max - distance_min) / step)) + 1
+    pregrasp_distances_to_try = np.linspace(0.05, 0.25, steps)
 
     # is_state_valid_fn_grasp currently still takes a 12-DoF configuration
     def is_single_arm_state_valid_fn_grasp(joint_configuration: JointConfigurationType) -> bool:

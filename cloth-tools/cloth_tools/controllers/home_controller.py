@@ -53,7 +53,7 @@ class HomeController(Controller):
             )
             self._path = path
         except PlannerError as e:
-            logger.warn(f"Failed to plan home path: {e}")
+            logger.warning(f"Failed to plan home path: {e}")
             self._path = None
             return
 

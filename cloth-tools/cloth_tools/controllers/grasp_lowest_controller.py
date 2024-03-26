@@ -94,7 +94,7 @@ def create_cloth_obstacle_planner(
     robot_diagram_builder = RobotDiagramBuilder()
 
     meshcat = add_meshcat(robot_diagram_builder)
-    meshcat.SetCameraPose([-2.0, 0, 1.0], [0, 0, 0])
+    meshcat.SetCameraPose([-1.0, 0, 1.0], [0, 0, 0])
 
     (arm_left_index, arm_right_index), (
         gripper_left_index,
@@ -247,6 +247,7 @@ class GraspLowestController(Controller):
         planner_with_cloth_obstacle.rank_goal_configurations_fn = rank_fn
 
         # Try moving pregrasp pose to several distances from the grasp pose
+        path_pregrasp = None  # To prevent UnboundLocalError
         distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
         for distance in distances_to_try:
             logger.info(f"Planning to pregrasp pose at distance {distance}.")
@@ -269,7 +270,7 @@ class GraspLowestController(Controller):
                 continue
 
         if path_pregrasp is None:
-            logger.warn("Failed to create path to any of the tried pregrasp poses.")
+            logger.warning("Failed to create path to any of the tried pregrasp poses.")
             self._trajectory_pregrasp = None
             self._trajectory_right_home = None
             self._trajectory_hang_left = None
