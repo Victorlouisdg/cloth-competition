@@ -15,7 +15,7 @@ from airo_drake import (
     finish_build,
     time_parametrize_toppra,
 )
-from airo_planner import DualArmOmplPlanner, PlannerError
+from airo_planner import DualArmOmplPlanner, PlannerError, rank_by_distance_to_desirable_configurations, stack_joints
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
@@ -237,10 +237,20 @@ class GraspLowestController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
+        # Try to avoid the shoulder from pointing towards the camera
+        # This can in rare cases trigger the robot to go into protective stop when grasping
+        # due to risk of clamping.
+        desirable_configurations = [stack_joints(self.station.home_joints_left, start_joints_right)]
+        rank_fn = partial(
+            rank_by_distance_to_desirable_configurations, desirable_configurations=desirable_configurations
+        )
+        planner_with_cloth_obstacle.rank_goal_configurations_fn = rank_fn
+
         # Try moving pregrasp pose to several distances from the grasp pose
         distances_to_try = [0.15, 0.20, 0.1, 0.25, 0.05, 0.01]
-        for d in distances_to_try:
-            pregrasp_pose = move_pose_backwards(grasp_pose, d)
+        for distance in distances_to_try:
+            logger.info(f"Planning to pregrasp pose at distance {distance}.")
+            pregrasp_pose = move_pose_backwards(grasp_pose, distance)
             self._pregrasp_pose = pregrasp_pose
 
             try:
@@ -251,26 +261,28 @@ class GraspLowestController(Controller):
                     None,
                     # desirable_goal_configurations_left=[
                     #     self.station.home_joints_left
-                    # ],  # Try to avoid the shoulder from pointing towards the camera
+                    # ],
                 )
+                break
             except PlannerError:
-                logger.info(f"No path found to pregrasp pose with distance {d}.")
+                logger.info(f"No path found to pregrasp pose with distance {distance}.")
                 continue
 
-            trajectory_pregrasp = time_parametrize_toppra(plant, path_pregrasp)
-            self._trajectory_pregrasp = trajectory_pregrasp
-
-        if self._trajectory_pregrasp is None:
-            logger.warn("Failed to create trajectory to any of the tried pregrasp poses.")
-            # Maybe reset all state at the beginning of each plan call?
+        if path_pregrasp is None:
+            logger.warn("Failed to create path to any of the tried pregrasp poses.")
+            self._trajectory_pregrasp = None
             self._trajectory_right_home = None
             self._trajectory_hang_left = None
             return
+
+        trajectory_pregrasp = time_parametrize_toppra(plant, path_pregrasp)
+        self._trajectory_pregrasp = trajectory_pregrasp
 
         # Here the right arm opens its gripper and moves to its home position
         # Plan for the right arm to move home (don't consider obstacles)
         planner = self.station.planner
 
+        # we moveL back to the pregrasp pose after grasping
         pregrasp_joints_left = path_pregrasp[-1][:6]
 
         home_joints_right = self.station.home_joints_right
@@ -284,6 +296,14 @@ class GraspLowestController(Controller):
         home_joints_wrist_flipped_left = self.station.home_joints_left.copy()
         home_joints_wrist_flipped_left[5] = -home_joints_wrist_flipped_left[5]
 
+        desirable_configurations_hang = [stack_joints(self.station.home_joints_left, home_joints_wrist_flipped_left)]
+        rank_fn_hang = partial(
+            rank_by_distance_to_desirable_configurations, desirable_configurations=desirable_configurations_hang
+        )
+
+        old_rank_fn = planner.rank_goal_configurations_fn
+        planner.rank_goal_configurations_fn = rank_fn_hang
+
         # Plan for the left arm to move to the hang pose
         hang_pose = hang_in_the_air_tcp_pose(left=True)
         path_hang_left = planner.plan_to_tcp_pose(
@@ -293,6 +313,10 @@ class GraspLowestController(Controller):
             None,
             # desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
         )
+
+        # reset this for future controller that might use it, might be better to have a separate planner for each controller
+        planner.rank_goal_configurations_fn = old_rank_fn
+
         self._path_hang_left = path_hang_left
 
         # Limit the acceleration of the joints to avoid the cloth swinging too much
