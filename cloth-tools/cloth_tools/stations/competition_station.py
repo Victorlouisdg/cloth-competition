@@ -114,8 +114,8 @@ class CompetitionStation(DualArmStation):
         self.home_joints_left = np.deg2rad([180, -120, 60, -30, -90, -90])
         self.home_joints_right = np.deg2rad([-180, -60, -60, -150, 90, 90])
 
-        joint_bounds_lower = np.deg2rad([-360, -180, -160, -360, -360, -360])
-        joint_bounds_upper = np.deg2rad([360, 0, 160, 360, 360, 360])
+        joint_bounds_lower = np.deg2rad([-360, -195, -160, -360, -360, -360])
+        joint_bounds_upper = np.deg2rad([360, 15, 160, 360, 360, 360])
         joint_bounds = (joint_bounds_lower, joint_bounds_upper)
         self.joint_bounds_left = joint_bounds
         self.joint_bounds_right = joint_bounds
