@@ -129,12 +129,13 @@ class CompetitionStation(DualArmStation):
         robot_diagram_builder = RobotDiagramBuilder()
 
         meshcat = add_meshcat(robot_diagram_builder)
+        meshcat.SetCameraPose([-2.0, 0, 1.0], [0, 0, 0])
 
         (arm_left_index, arm_right_index), (
             gripper_left_index,
             gripper_right_index,
         ) = add_cloth_competition_dual_ur5e_scene(robot_diagram_builder, X_W_LCB, X_W_RCB)
-        robot_diagram, _ = finish_build(robot_diagram_builder)
+        robot_diagram, _ = finish_build(robot_diagram_builder, meshcat)
 
         scene = DualArmScene(
             robot_diagram, arm_left_index, arm_right_index, gripper_left_index, gripper_right_index, meshcat

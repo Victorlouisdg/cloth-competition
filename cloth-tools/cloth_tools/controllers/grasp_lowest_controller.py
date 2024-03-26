@@ -1,12 +1,21 @@
 import sys
 from functools import partial
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import cv2
 import numpy as np
 import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from airo_drake import (
+    DualArmScene,
+    add_meshcat,
+    animate_dual_joint_trajectory,
+    concatenate_drake_trajectories,
+    finish_build,
+    time_parametrize_toppra,
+)
+from airo_planner import DualArmOmplPlanner, PlannerError
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
@@ -19,24 +28,23 @@ from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, bbox_to_mins_and_s
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
 from cloth_tools.controllers.home_controller import HomeController
-from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
 from cloth_tools.drake.scenes import (
+    add_cloth_competition_dual_ur5e_scene,
     add_cloth_obstacle_to_builder,
-    add_dual_ur5e_and_table_to_builder,
     add_safety_wall_to_builder,
 )
-from cloth_tools.drake.visualization import publish_dual_arm_trajectory
-from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
+from cloth_tools.kinematics.constants import TCP_TRANSFORM
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation, inverse_kinematics_in_world_fn
 from cloth_tools.stations.dual_arm_station import DualArmStation
-from cloth_tools.trajectory_execution import execute_dual_arm_trajectory, time_parametrize_toppra
+from cloth_tools.trajectory_execution import execute_dual_arm_drake_trajectory
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
+from pydrake.trajectories import Trajectory
 
 import open3d as o3d  # isort:skip
 
@@ -72,7 +80,7 @@ def lowest_point_grasp_pose(
 
 def create_cloth_obstacle_planner(
     station: CompetitionStation, point_cloud_cloth: PointCloud, left_hanging: bool = True
-):
+) -> tuple[DualArmOmplPlanner, DualArmScene, o3d.t.geometry.TriangleMesh]:
     X_W_LCB = station.left_arm_pose
     X_W_RCB = station.right_arm_pose
 
@@ -84,35 +92,48 @@ def create_cloth_obstacle_planner(
         X_W_TCP = X_W_RCB @ X_RCB_TCP
 
     robot_diagram_builder = RobotDiagramBuilder()
-    meshcat = add_meshcat_to_builder(robot_diagram_builder)
-    arm_indices, gripper_indices = add_dual_ur5e_and_table_to_builder(robot_diagram_builder, X_W_LCB, X_W_RCB)
+
+    meshcat = add_meshcat(robot_diagram_builder)
+    meshcat.SetCameraPose([-2.0, 0, 1.0], [0, 0, 0])
+
+    (arm_left_index, arm_right_index), (
+        gripper_left_index,
+        gripper_right_index,
+    ) = add_cloth_competition_dual_ur5e_scene(robot_diagram_builder, X_W_LCB, X_W_RCB)
+
     _, hull = add_cloth_obstacle_to_builder(robot_diagram_builder, point_cloud_cloth)
     add_safety_wall_to_builder(robot_diagram_builder, X_W_TCP)
 
-    diagram, context = finish_build(robot_diagram_builder, meshcat)
+    robot_diagram, _ = finish_build(robot_diagram_builder, meshcat)
+
+    scene = DualArmScene(
+        robot_diagram, arm_left_index, arm_right_index, gripper_left_index, gripper_right_index, meshcat
+    )
 
     collision_checker = SceneGraphCollisionChecker(
-        model=diagram,
-        robot_model_instances=[*arm_indices, *gripper_indices],
+        model=scene.robot_diagram,
+        robot_model_instances=[
+            scene.arm_left_index,
+            scene.arm_right_index,
+            scene.gripper_left_index,
+            scene.gripper_right_index,
+        ],
         edge_step_size=0.125,  # Arbitrary value: we don't use the CheckEdgeCollisionFree
         env_collision_padding=0.005,
         self_collision_padding=0.005,
     )
 
-    is_state_valid_fn = collision_checker.CheckConfigCollisionFree
-
-    inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
-    inverse_kinematics_right_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
+    inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB, tcp_transform=TCP_TRANSFORM)
+    inverse_kinematics_right_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB, tcp_transform=TCP_TRANSFORM)
 
     planner = DualArmOmplPlanner(
-        is_state_valid_fn,
-        inverse_kinematics_left_fn,
-        inverse_kinematics_right_fn,
-        station.joint_bounds_left,
-        station.joint_bounds_right,
+        is_state_valid_fn=collision_checker.CheckConfigCollisionFree,
+        inverse_kinematics_left_fn=inverse_kinematics_left_fn,
+        inverse_kinematics_right_fn=inverse_kinematics_right_fn,
+        joint_bounds_left=station.joint_bounds_left,
+        joint_bounds_right=station.joint_bounds_right,
     )
-
-    return planner, hull, diagram, context, collision_checker, meshcat, arm_indices, gripper_indices
+    return planner, scene, hull
 
 
 class GraspLowestController(Controller):
@@ -127,21 +148,16 @@ class GraspLowestController(Controller):
         self.bbox = bbox
 
         # Attributes that will be set in plan()
-        self._image: Optional[OpenCVIntImageType] = None
-        self._grasp_pose: Optional[HomogeneousMatrixType] = None
-        self._point_cloud: Optional[PointCloud] = None
-        self._lowest_point: Optional[Vector3DType] = None
-        self._pregrasp_pose: Optional[HomogeneousMatrixType] = None
-        self._path_pregrasp: Optional[Any] = None
-        self._path_home_right: Optional[Any] = None
-        self._path_hang_left: Optional[Any] = None
-        self._trajectory_pregrasp: Optional[Any] = None
-        self._trajectory_right_home: Optional[Any] = None
-        self._trajectory_hang_left: Optional[Any] = None
-        self._time_trajectory_pregrasp: Optional[Any] = None
-        self._time_trajectory_right_home: Optional[Any] = None
-        self._time_trajectory_hang_left: Optional[Any] = None
-        self._hull: Optional[o3d.t.geometry.TriangleMesh] = None
+        self._image: OpenCVIntImageType | None = None
+        self._grasp_pose: HomogeneousMatrixType | None = None
+        self._point_cloud: PointCloud | None = None
+        self._lowest_point: Vector3DType | None = None
+        self._pregrasp_pose: HomogeneousMatrixType | None = None
+
+        self._trajectory_pregrasp: Trajectory | None = None
+        self._trajectory_right_home: Trajectory | None = None
+        self._trajectory_hang_left: Trajectory | None = None
+        self._hull: o3d.t.geometry.TriangleMesh | None = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -163,7 +179,7 @@ class GraspLowestController(Controller):
         dual_arm = self.station.dual_arm
 
         # Execute the path to the pregrasp pose
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_pregrasp, self._time_trajectory_pregrasp)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_pregrasp)
 
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(self._grasp_pose, None, linear_speed=0.2).wait()
@@ -172,30 +188,16 @@ class GraspLowestController(Controller):
 
         # Open the right gripper of the cloth be released
         dual_arm.right_manipulator.gripper.open().wait()
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_right_home, self._time_trajectory_right_home)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_right_home)
 
         # Move the left arm to the hang pose
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_hang_left, self._time_trajectory_hang_left)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_hang_left)
 
     def _create_cloth_obstacle_planner(self, point_cloud_cloth: PointCloud) -> DualArmOmplPlanner:
-        (
-            planner,
-            hull,
-            diagram,
-            context,
-            collision_checker,
-            meshcat,
-            arm_indices,
-            gripper_indices,
-        ) = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=False)
-        # Save all this for visualization
+        planner, scene, hull = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=False)
+        # Save this for visualization
         self._hull = hull
-        self._diagram = diagram
-        self._context = context
-        self._collision_checker = collision_checker
-        self._meshcat = meshcat
-        self._arm_indices = arm_indices
-        self._gripper_indices = gripper_indices
+        self.drake_scene = scene
 
         return planner
 
@@ -227,10 +229,10 @@ class GraspLowestController(Controller):
 
         logger.info(f"Found lowest point in bbox at: {lowest_point_}")
 
-        planner_cloth = self._create_cloth_obstacle_planner(point_cloud_cropped)
+        planner_with_cloth_obstacle = self._create_cloth_obstacle_planner(point_cloud_cropped)
+        plant = self.station.drake_scene.robot_diagram.plant()  # For use with TOPP-RA
 
         # Create planner with cloth obstacle
-
         dual_arm = self.station.dual_arm
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
@@ -241,59 +243,43 @@ class GraspLowestController(Controller):
             pregrasp_pose = move_pose_backwards(grasp_pose, d)
             self._pregrasp_pose = pregrasp_pose
 
-            path_pregrasp = planner_cloth.plan_to_tcp_pose(
-                start_joints_left,
-                start_joints_right,
-                pregrasp_pose,
-                None,
-                desirable_goal_configurations_left=[
-                    self.station.home_joints_left
-                ],  # Try to avoid the shoulder from pointing towards the camera
-            )
-            self._path_pregrasp = path_pregrasp
-
-            if path_pregrasp is not None:
-                logger.info(f"Found path to pregrasp pose with distance {d}.")
-
-                trajectory_pregrasp, time_trajectory_pregrasp = time_parametrize_toppra(
-                    path_pregrasp, self._diagram.plant()
+            try:
+                path_pregrasp = planner_with_cloth_obstacle.plan_to_tcp_pose(
+                    start_joints_left,
+                    start_joints_right,
+                    pregrasp_pose,
+                    None,
+                    # desirable_goal_configurations_left=[
+                    #     self.station.home_joints_left
+                    # ],  # Try to avoid the shoulder from pointing towards the camera
                 )
-                self._trajectory_pregrasp = trajectory_pregrasp
-                self._time_trajectory_pregrasp = time_trajectory_pregrasp
-                break
-            else:
-                logger.info(f"No path to pregrasp pose with distance {d}.")
+            except PlannerError:
+                logger.info(f"No path found to pregrasp pose with distance {d}.")
+                continue
 
-        if path_pregrasp is None:
-            logger.info("No path to any of the tried pregrasp poses found.")
+            trajectory_pregrasp = time_parametrize_toppra(plant, path_pregrasp)
+            self._trajectory_pregrasp = trajectory_pregrasp
+
+        if self._trajectory_pregrasp is None:
+            logger.warn("Failed to create trajectory to any of the tried pregrasp poses.")
             # Maybe reset all state at the beginning of each plan call?
-            self._path_pregrasp = None
-            self._path_home_right = None
-            self._path_hang_left = None
-            self._trajectory_pregrasp = None
             self._trajectory_right_home = None
             self._trajectory_hang_left = None
-            self._time_trajectory_pregrasp = None
-            self._time_trajectory_right_home = None
-            self._time_trajectory_hang_left = None
             return
 
         # Here the right arm opens its gripper and moves to its home position
         # Plan for the right arm to move home (don't consider obstacles)
         planner = self.station.planner
 
-        pregrasp_joints_left = path_pregrasp[-1][0]
+        pregrasp_joints_left = path_pregrasp[-1][:6]
 
         home_joints_right = self.station.home_joints_right
         path_home_right = planner.plan_to_joint_configuration(
             pregrasp_joints_left, start_joints_right, None, home_joints_right
         )
-        self._path_home_right = path_home_right
-        trajectory_right_home, time_trajectory_right_home = time_parametrize_toppra(
-            path_home_right, self._diagram.plant()
-        )
+        trajectory_right_home = time_parametrize_toppra(plant, path_home_right)
+
         self._trajectory_right_home = trajectory_right_home
-        self._time_trajectory_right_home = time_trajectory_right_home
 
         home_joints_wrist_flipped_left = self.station.home_joints_left.copy()
         home_joints_wrist_flipped_left[5] = -home_joints_wrist_flipped_left[5]
@@ -305,31 +291,28 @@ class GraspLowestController(Controller):
             home_joints_right,
             hang_pose,
             None,
-            desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
+            # desirable_goal_configurations_left=[self.station.home_joints_left, home_joints_wrist_flipped_left],
         )
         self._path_hang_left = path_hang_left
 
         # Limit the acceleration of the joints to avoid the cloth swinging too much
-        trajectory_hang_left, time_trajectory_hang_left = time_parametrize_toppra(
-            path_hang_left, self._diagram.plant(), joint_acceleration_limit=0.5
-        )
+        trajectory_hang_left = time_parametrize_toppra(plant, path_hang_left, joint_acceleration_limit=0.5)
         self._trajectory_hang_left = trajectory_hang_left
-        self._time_trajectory_hang_left = time_trajectory_hang_left
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
-        if self._path_pregrasp is None:
+        if self._trajectory_pregrasp is None:
             return False
 
-        if self._path_home_right is None:
+        if self._trajectory_right_home is None:
             return False
 
-        if self._path_hang_left is None:
+        if self._trajectory_hang_left is None:
             return False
 
         return True
 
-    def visualize_plan(self) -> Tuple[OpenCVIntImageType, Any]:
+    def visualize_plan(self) -> tuple[OpenCVIntImageType, Any]:
         if self._image is None:
             raise RuntimeError("You must call plan() before visualize_plan().")
 
@@ -357,16 +340,21 @@ class GraspLowestController(Controller):
             rr_pregrasp_pose = rr.Transform3D(translation=pregrasp_pose[0:3, 3], mat3x3=pregrasp_pose[0:3, 0:3])
             rr.log("world/pregrasp_pose", rr_pregrasp_pose)
 
-        if self._path_pregrasp is not None:
-            trajectory = self._trajectory_pregrasp
-            time_trajectory = self._time_trajectory_pregrasp
-            publish_dual_arm_trajectory(
-                trajectory,
-                time_trajectory,
-                self._meshcat,
-                self._diagram,
-                self._context,
-                *self._arm_indices,
+        if (
+            self._trajectory_pregrasp is not None
+            and self._trajectory_right_home is not None
+            and self._trajectory_hang_left is not None
+        ):
+            scene = self.drake_scene
+            trajectory_concatenated = concatenate_drake_trajectories(
+                [self._trajectory_pregrasp, self._trajectory_right_home, self._trajectory_hang_left]
+            )
+            animate_dual_joint_trajectory(
+                scene.meshcat,
+                scene.robot_diagram,
+                scene.arm_left_index,
+                scene.arm_right_index,
+                trajectory_concatenated,
             )
 
         if self._point_cloud is not None:

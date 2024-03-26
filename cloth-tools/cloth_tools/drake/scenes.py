@@ -76,12 +76,6 @@ def add_cloth_obstacle_to_builder(
 
     hull_urdf_path = mesh_urdf_path(hull_filename, "cloth_hull")
 
-    # Save hull attributes for Rerun visualization
-    # hull.compute_vertex_normals()
-    # self._hull_vertex_positions = hull.vertex.positions.numpy()
-    # self._hull_vertex_normals = hull.vertex.normals.numpy()
-    # self._hull_triangle_indices = hull.triangle.indices.numpy()
-
     # Add the cloth hull to the scene
     plant = robot_diagram_builder.plant()
     parser = robot_diagram_builder.parser()
