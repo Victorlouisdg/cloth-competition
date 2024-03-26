@@ -1,9 +1,10 @@
 import sys
 
+from airo_drake import animate_dual_joint_trajectory, time_parametrize_toppra
+from airo_planner import PlannerError
 from cloth_tools.controllers.controller import Controller
-from cloth_tools.drake.visualization import publish_dual_arm_trajectory
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.stations.competition_station import CompetitionStation
+from cloth_tools.trajectory_execution import execute_dual_arm_drake_trajectory
 from loguru import logger
 
 
@@ -45,31 +46,32 @@ class HomeController(Controller):
             goal_joints_right = None
 
         planner = self.station.planner
-        path = planner.plan_to_joint_configuration(
-            start_joints_left, start_joints_right, goal_joints_left, goal_joints_right
-        )
-        self._path = path
 
-        joint_trajectory, time_trajectory = time_parametrize_toppra(path, self.station._diagram.plant())
+        try:
+            path = planner.plan_to_joint_configuration(
+                start_joints_left, start_joints_right, goal_joints_left, goal_joints_right
+            )
+            self._path = path
+        except PlannerError as e:
+            logger.warn(f"Failed to plan home path: {e}")
+            self._path = None
+            return
 
-        self._joint_trajectory = joint_trajectory
-        self._time_trajectory = time_trajectory
+        drake_plant = self.station.drake_scene.robot_diagram.plant()
+        trajectory = time_parametrize_toppra(drake_plant, path)
+
+        self.trajectory = trajectory
 
     def visualize_plan(self) -> None:
-        station = self.station
+        scene = self.station.drake_scene
 
-        publish_dual_arm_trajectory(
-            self._joint_trajectory,
-            self._time_trajectory,
-            station._meshcat,
-            station._diagram,
-            station._context,
-            *station._arm_indices,
+        animate_dual_joint_trajectory(
+            scene.meshcat, scene.robot_diagram, scene.arm_left_index, scene.arm_right_index, self.trajectory
         )
 
     def execute_plan(self) -> None:
-        if self._path is None:
-            logger.info("Home not executed because no path was found.")
+        if self.trajectory is None:
+            logger.info("Home not executed because no trajectory was found.")
             return
 
         dual_arm = self.station.dual_arm
@@ -87,7 +89,7 @@ class HomeController(Controller):
         if self.open_right_gripper:
             right_opened.wait()
 
-        execute_dual_arm_trajectory(dual_arm, self._joint_trajectory, self._time_trajectory)
+        execute_dual_arm_drake_trajectory(dual_arm, self.trajectory)
 
     def execute_interactive(self) -> None:
         while True:

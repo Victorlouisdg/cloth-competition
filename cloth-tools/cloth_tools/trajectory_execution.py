@@ -25,25 +25,25 @@ def ensure_dual_arm_at_joint_configuration(dual_arm, joints_left, joints_right, 
         )
 
 
-def execute_dual_arm_trajectory(
-    dual_arm: DualArmPositionManipulator, joint_trajectory: Trajectory, time_trajectory: Trajectory
-):
+def execute_dual_arm_drake_trajectory(dual_arm: DualArmPositionManipulator, joint_trajectory: Trajectory):
     # TODO don't receive joint and time trajectory separately, but as a single PathParametrizedTrajectory
-    # TODO use discretize trajectory
-    start_joints = joint_trajectory.value(time_trajectory.value(0).item()).squeeze()
+    # TODO create and use discretize_dual_arm_trajectory
+    assert joint_trajectory.start_time() == 0.0
+
+    start_joints = joint_trajectory.value(0).squeeze()
     start_joints_left = start_joints[0:6]
     start_joints_right = start_joints[6:12]
 
     ensure_dual_arm_at_joint_configuration(dual_arm, start_joints_left, start_joints_right)
 
     period = 0.005
-    duration = time_trajectory.end_time()
+    duration = joint_trajectory.end_time()
 
     n_servos = int(np.ceil(duration / period))
     period_adjusted = duration / n_servos  # can be slightly different from period due to rounding
 
     for t in np.linspace(0, duration, n_servos):
-        joints = joint_trajectory.value(time_trajectory.value(t).item()).squeeze()
+        joints = joint_trajectory.value(t).squeeze()
         joints_left = joints[0:6]
         joints_right = joints[6:12]
         left_servo = dual_arm.left_manipulator.servo_to_joint_configuration(joints_left, period_adjusted)

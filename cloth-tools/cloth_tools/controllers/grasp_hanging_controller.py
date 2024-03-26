@@ -15,10 +15,10 @@ from cloth_tools.controllers.grasp_lowest_controller import create_cloth_obstacl
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.visualization import publish_dual_arm_trajectory, publish_ik_solutions
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
+from cloth_tools.trajectory_execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.visualization.opencv import draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards
