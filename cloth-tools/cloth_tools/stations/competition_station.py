@@ -1,6 +1,5 @@
 import multiprocessing
 from functools import partial
-from typing import List
 
 import numpy as np
 from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera import (
@@ -10,31 +9,16 @@ from airo_camera_toolkit.cameras.multiprocess.multiprocess_stereo_rgbd_camera im
 from airo_camera_toolkit.cameras.zed.zed2i import Zed2i
 from airo_camera_toolkit.image_transforms.transforms.crop import Crop
 from airo_camera_toolkit.interfaces import StereoRGBDCamera
-from airo_typing import HomogeneousMatrixType, JointConfigurationType
+from airo_drake import DualArmScene, add_meshcat, finish_build
+from airo_planner import DualArmOmplPlanner, DualArmPlanner
 from cloth_tools.config import load_camera_pose_in_left_and_right, setup_dual_arm_ur5e_in_world
-from cloth_tools.drake.building import add_meshcat_to_builder, finish_build
-from cloth_tools.drake.scenes import add_dual_ur5e_and_table_to_builder
-from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
-from cloth_tools.planning.interfaces import DualArmMotionPlanner
+from cloth_tools.drake.scenes import add_cloth_competition_dual_ur5e_scene
+from cloth_tools.kinematics.constants import JOINT_BOUNDS, TCP_TRANSFORM
+from cloth_tools.kinematics.inverse_kinematics import inverse_kinematics_in_world_fn
 from cloth_tools.stations.coordinate_frames import create_egocentric_world_frame
 from cloth_tools.stations.dual_arm_station import DualArmStation
 from loguru import logger
 from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
-from ur_analytic_ik import ur5e
-
-# Hardcoded for now
-tcp_transform = np.identity(4)
-tcp_transform[2, 3] = 0.175
-
-
-def inverse_kinematics_in_world_fn(
-    tcp_pose: HomogeneousMatrixType, X_W_CB: HomogeneousMatrixType
-) -> List[JointConfigurationType]:
-    X_W_TCP = tcp_pose
-    X_CB_W = np.linalg.inv(X_W_CB)
-    solutions_1x6 = ur5e.inverse_kinematics_with_tcp(X_CB_W @ X_W_TCP, tcp_transform)
-    solutions = [solution.squeeze() for solution in solutions_1x6]
-    return solutions
 
 
 def check_zed_point_cloud_completeness(camera: Zed2i):
@@ -114,32 +98,23 @@ class CompetitionStation(DualArmStation):
         self.home_joints_left = np.deg2rad([180, -120, 60, -30, -90, -90])
         self.home_joints_right = np.deg2rad([-180, -60, -60, -150, 90, 90])
 
-        joint_bounds_lower = np.deg2rad([-360, -195, -160, -360, -360, -360])
-        joint_bounds_upper = np.deg2rad([360, 15, 160, 360, 360, 360])
-        joint_bounds = (joint_bounds_lower, joint_bounds_upper)
-        self.joint_bounds_left = joint_bounds
-        self.joint_bounds_right = joint_bounds
+        self.joint_bounds_left = JOINT_BOUNDS
+        self.joint_bounds_right = JOINT_BOUNDS
 
         # Planner for the two arms without obstacles (only the table)
-        self.planner: DualArmMotionPlanner = self._setup_planner(X_W_LCB, X_W_RCB)
-
-        # This is purely for visualization, but read the robot joints and publish them to meshcat
-        diagram = self._diagram
-        context = self._context
-        arm_indices = self._arm_indices
-        self.home_joints_left
-        self.home_joints_right
+        self.planner: DualArmPlanner = self._setup_planner(X_W_LCB, X_W_RCB)
 
         # Publishing the current joint is purely for debugging. This way you can check in meshcat if the robot is
         # mounted the same way as in the real world as in the simulation.
+        robot_diagram = self.drake_scene.robot_diagram
+        context = robot_diagram.CreateDefaultContext()
         current_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         current_joints_right = dual_arm.right_manipulator.get_joint_configuration()
-        plant = diagram.plant()
+        plant = robot_diagram.plant()
         plant_context = plant.GetMyContextFromRoot(context)
-        arm_left_index, arm_right_index = arm_indices
-        plant.SetPositions(plant_context, arm_left_index, current_joints_left)
-        plant.SetPositions(plant_context, arm_right_index, current_joints_right)
-        diagram.ForcedPublish(context)
+        plant.SetPositions(plant_context, self.drake_scene.arm_left_index, current_joints_left)
+        plant.SetPositions(plant_context, self.drake_scene.arm_right_index, current_joints_right)
+        robot_diagram.ForcedPublish(context)
 
         logger.info("CompetitionStation initialized.")
 
@@ -150,39 +125,48 @@ class CompetitionStation(DualArmStation):
 
     def _setup_planner(self, X_W_LCB, X_W_RCB) -> DualArmOmplPlanner:
         # Creating the default scene
-        robot_diagram_builder = RobotDiagramBuilder()
-        meshcat = add_meshcat_to_builder(robot_diagram_builder)
 
-        arm_indices, gripper_indices = add_dual_ur5e_and_table_to_builder(robot_diagram_builder, X_W_LCB, X_W_RCB)
-        diagram, context = finish_build(robot_diagram_builder, meshcat)
+        robot_diagram_builder = RobotDiagramBuilder()
+
+        meshcat = add_meshcat(robot_diagram_builder)
+
+        (arm_left_index, arm_right_index), (
+            gripper_left_index,
+            gripper_right_index,
+        ) = add_cloth_competition_dual_ur5e_scene(robot_diagram_builder, X_W_LCB, X_W_RCB)
+        robot_diagram, context = finish_build(robot_diagram_builder)
+
+        scene = DualArmScene(
+            robot_diagram, arm_left_index, arm_right_index, gripper_left_index, gripper_right_index, meshcat
+        )
+        self.drake_scene = scene
 
         collision_checker = SceneGraphCollisionChecker(
-            model=diagram,
-            robot_model_instances=[*arm_indices, *gripper_indices],
+            model=scene.robot_diagram,
+            robot_model_instances=[
+                scene.arm_left_index,
+                scene.arm_right_index,
+                scene.gripper_left_index,
+                scene.gripper_right_index,
+            ],
             edge_step_size=0.125,  # Arbitrary value: we don't use the CheckEdgeCollisionFree
             env_collision_padding=0.005,
             self_collision_padding=0.005,
         )
 
-        is_state_valid_fn = collision_checker.CheckConfigCollisionFree
-
-        inverse_kinematics_left_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB)
-        inverse_kinematics_right_fn = partial(inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB)
-
-        # expose these things for visualization
-        self._diagram = diagram
-        self._context = context
-        self._collision_checker = collision_checker
-        self._meshcat = meshcat
-        self._arm_indices = arm_indices
-        self._gripper_indices = gripper_indices
+        inverse_kinematics_left_fn = partial(
+            inverse_kinematics_in_world_fn, X_W_CB=X_W_LCB, tcp_transform=TCP_TRANSFORM
+        )
+        inverse_kinematics_right_fn = partial(
+            inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB, tcp_transform=TCP_TRANSFORM
+        )
 
         planner = DualArmOmplPlanner(
-            is_state_valid_fn,
-            inverse_kinematics_left_fn,
-            inverse_kinematics_right_fn,
-            self.joint_bounds_left,
-            self.joint_bounds_right,
+            is_state_valid_fn=collision_checker.CheckConfigCollisionFree,
+            inverse_kinematics_left_fn=inverse_kinematics_left_fn,
+            inverse_kinematics_right_fn=inverse_kinematics_right_fn,
+            joint_bounds_left=self.joint_bounds_left,
+            joint_bounds_right=self.joint_bounds_right,
         )
         return planner
 
