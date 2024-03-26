@@ -12,10 +12,10 @@ from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp
 from cloth_tools.controllers.grasp_lowest_controller import create_cloth_obstacle_planner
 from cloth_tools.drake.visualization import publish_dual_arm_trajectory
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
+from cloth_tools.trajectory_execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.visualization.opencv import draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from cloth_tools.wrench_smoother import WrenchSmoother

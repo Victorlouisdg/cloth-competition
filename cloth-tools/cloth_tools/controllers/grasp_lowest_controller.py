@@ -27,11 +27,11 @@ from cloth_tools.drake.scenes import (
 )
 from cloth_tools.drake.visualization import publish_dual_arm_trajectory
 from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation, inverse_kinematics_in_world_fn
 from cloth_tools.stations.dual_arm_station import DualArmStation
+from cloth_tools.trajectory_execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards

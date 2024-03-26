@@ -1,16 +1,17 @@
 import sys
 import time
-from typing import Any, List, Optional, Tuple
+from typing import Any, Tuple
 
 import cv2
 import numpy as np
 import rerun as rr
 from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from airo_drake import animate_dual_joint_trajectory, concatenate_drake_trajectories, time_parametrize_toppra
+from airo_planner import PlannerError
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
-    JointConfigurationType,
     OpenCVIntImageType,
     PointCloud,
     RotationMatrixType,
@@ -19,12 +20,11 @@ from airo_typing import (
 from cloth_tools.bounding_boxes import BBOX_CLOTH_ON_TABLE, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.home_controller import HomeController
-from cloth_tools.drake.visualization import publish_dual_arm_trajectory
 from cloth_tools.motion_blur_detector import MotionBlurDetector
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import highest_point
 from cloth_tools.stations.competition_station import CompetitionStation
+from cloth_tools.trajectory_execution import execute_dual_arm_drake_trajectory
 from cloth_tools.visualization.opencv import draw_point_3d, draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from linen.elemental.move_backwards import move_pose_backwards
@@ -95,18 +95,15 @@ class GraspHighestController(Controller):
         self.bbox = bbox
 
         # Attributes that will be set in plan()
-        self._image: Optional[OpenCVIntImageType] = None
-        self._grasp_pose: Optional[HomogeneousMatrixType] = None
-        self._pregrasp_pose: Optional[HomogeneousMatrixType] = None
-        self._point_cloud: Optional[PointCloud] = None
-        self._highest_point: Optional[Vector3DType] = None
-        self._path_pregrasp: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
-        self._path_hang: Optional[List[Tuple[JointConfigurationType, JointConfigurationType]]] = None
-        self._hang_tcp_pose: Optional[HomogeneousMatrixType] = None
-        self._trajectory_pregrasp: Optional[Trajectory] = None
-        self._time_trajectory_pregrasp: Optional[Trajectory] = None
-        self._trajectory_hang: Optional[Trajectory] = None
-        self._time_trajectory_hang: Optional[Trajectory] = None
+        ## Observation & representations
+        self._image: OpenCVIntImageType | None = None
+        self._grasp_pose: HomogeneousMatrixType | None = None
+        self._pregrasp_pose: HomogeneousMatrixType | None = None
+        self._point_cloud: PointCloud | None = None
+        self._highest_point: Vector3DType | None = None
+        ##  Planned trajectories
+        self._trajectory_pregrasp: Trajectory | None = None
+        self._trajectory_hang: Trajectory | None = None
 
         camera = self.station.camera
         camera_pose = self.station.camera_pose
@@ -130,7 +127,7 @@ class GraspHighestController(Controller):
         assert dual_arm.right_manipulator.gripper is not None  # For mypy
 
         # Execute the path to the pregrasp pose
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_pregrasp, self._time_trajectory_pregrasp)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_pregrasp)
 
         # Execute the grasp
         dual_arm.move_linear_to_tcp_pose(None, grasp_pose, linear_speed=0.2).wait()
@@ -138,7 +135,7 @@ class GraspHighestController(Controller):
         dual_arm.move_linear_to_tcp_pose(None, pregrasp_pose, linear_speed=0.2).wait()
 
         # Hang the cloth in the air (do this a bit slower to limit the cloth swinging)
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_hang, self._time_trajectory_hang)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_hang)
 
     def plan(self) -> None:
         logger.info(f"{self.__class__.__name__}: Creating new plan.")
@@ -177,41 +174,41 @@ class GraspHighestController(Controller):
         dual_arm = self.station.dual_arm
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
-        path_pregrasp = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
-        self._path_pregrasp = path_pregrasp
 
-        if path_pregrasp is None:
+        try:
+            path_pregrasp = planner.plan_to_tcp_pose(start_joints_left, start_joints_right, None, pregrasp_pose)
+        except PlannerError as e:
+            logger.warn(f"Failed to plan pregrasp path: {e}")
             return
 
-        trajectory_pregrasp, time_trajectory_pregrasp = time_parametrize_toppra(
-            path_pregrasp, self.station._diagram.plant()
-        )
+        drake_plant = self.station.drake_scene.robot_diagram.plant()
+        trajectory_pregrasp = time_parametrize_toppra(drake_plant, path_pregrasp)
         self._trajectory_pregrasp = trajectory_pregrasp
-        self._time_trajectory_pregrasp = time_trajectory_pregrasp
 
         logger.info(f"{self.__class__.__name__}: Planning from pregrasp pose to hang pose.")
 
         # we operate under the assumption that the after the grasp the robot is back at the pregrasp pose with the same joint config
-        pregrasp_joints_right = path_pregrasp[-1][1]
+        pregrasp_joints_right = path_pregrasp[-1][6:]
 
         # Warning: only implemented for right arm at the moment, when implementing for left arm, change args in plan_()
         self._hang_tcp_pose = hang_in_the_air_tcp_pose(left=False)
-        path_hang = planner.plan_to_tcp_pose(start_joints_left, pregrasp_joints_right, None, self._hang_tcp_pose)
-        self._path_hang = path_hang
+
+        try:
+            path_hang = planner.plan_to_tcp_pose(start_joints_left, pregrasp_joints_right, None, self._hang_tcp_pose)
+        except PlannerError as e:
+            logger.warn(f"Failed to plan hang path: {e}")
+            return
 
         # Lower joint acceleration limit to avoid swinging
-        trajectory_hang, time_trajectory_hang = time_parametrize_toppra(
-            path_hang, self.station._diagram.plant(), joint_acceleration_limit=0.5
-        )
+        trajectory_hang = time_parametrize_toppra(drake_plant, path_hang, joint_acceleration_limit=0.5)
         self._trajectory_hang = trajectory_hang
-        self._time_trajectory_hang = time_trajectory_hang
 
     def _can_execute(self) -> bool:
         # maybe this should just be a property?
-        if self._path_pregrasp is None:
+        if self._trajectory_pregrasp is None:
             return False
 
-        if self._path_hang is None:
+        if self._trajectory_hang is None:
             return False
 
         return True
@@ -242,20 +239,19 @@ class GraspHighestController(Controller):
             rr_hang_tcp_pose = rr.Transform3D(translation=hang_tcp_pose[0:3, 3], mat3x3=hang_tcp_pose[0:3, 0:3])
             rr.log("world/hang_tcp_pose", rr_hang_tcp_pose)
 
-        if self._path_pregrasp is not None:
-            station = self.station
-            trajectory = self._trajectory_pregrasp
-            time_trajectory = self._time_trajectory_pregrasp
+        if self._trajectory_pregrasp is not None and self._trajectory_hang is not None:
+            scene = self.station.drake_scene
 
-            publish_dual_arm_trajectory(
-                trajectory,
-                time_trajectory,
-                station._meshcat,
-                station._diagram,
-                station._context,
-                *station._arm_indices,
+            trajectory_concatenated = concatenate_drake_trajectories(
+                [self._trajectory_pregrasp, self._trajectory_hang]
             )
-            # TODO find a way to also publish the hang path, maybe just append it?
+            animate_dual_joint_trajectory(
+                scene.meshcat,
+                scene.robot_diagram,
+                scene.arm_left_index,
+                scene.arm_right_index,
+                trajectory_concatenated,
+            )
 
         if self._point_cloud is not None:
             point_cloud = self._point_cloud
