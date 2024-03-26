@@ -164,7 +164,7 @@ class StretchController(Controller):
         servo_awaitable = None
 
         warmup = 1.0
-        timeout = 5.0
+        timeout = 10.0
         time_start = time.time()
 
         while True:
@@ -322,7 +322,7 @@ class StretchController(Controller):
         else:
             # Autonomous execution
             self.plan()
-            self.visualize_plan()
+            # self.visualize_plan()
             self.execute_plan()
 
         # Close cv2 window to reduce clutter

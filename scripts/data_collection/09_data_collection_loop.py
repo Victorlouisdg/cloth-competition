@@ -104,6 +104,9 @@ if __name__ == "__main__":
         home_controller = HomeController(station)
         home_controller.execute(interactive=False)
 
+        dual_arm.left_manipulator.rtde_control.zeroFtSensor()
+        dual_arm.right_manipulator.rtde_control.zeroFtSensor()
+
         # Start of new episode
         grasp_highest_controller = GraspHighestController(station, BBOX_CLOTH_ON_TABLE)
         grasp_highest_controller.execute(interactive=True)
@@ -112,7 +115,7 @@ if __name__ == "__main__":
         motion_blur_detector.wait_for_blur_to_stabilize()
 
         grasp_lowest_controller = GraspLowestController(station, BBOX_CLOTH_IN_THE_AIR)
-        grasp_lowest_controller.execute(interactive=True)
+        grasp_lowest_controller.execute(interactive=False)
 
         motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
         motion_blur_detector.wait_for_blur_to_stabilize(timeout=20)
@@ -123,10 +126,10 @@ if __name__ == "__main__":
         save_competition_observation(observation_start, observation_start_dir)
 
         grasp_hanging_controller = GraspHangingController(station, BBOX_CLOTH_IN_THE_AIR, sample_dir)
-        grasp_hanging_controller.execute(interactive=True)
+        grasp_hanging_controller.execute(interactive=False)
 
         stretch_controller = StretchController(station)
-        stretch_controller.execute(interactive=True)
+        stretch_controller.execute(interactive=False)
 
         motion_blur_detector = MotionBlurDetector(station.camera, station.hanging_cloth_crop)
         motion_blur_detector.wait_for_blur_to_stabilize(timeout=15)
