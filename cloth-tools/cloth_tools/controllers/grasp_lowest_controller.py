@@ -13,8 +13,9 @@ from airo_drake import (
     animate_dual_joint_trajectory,
     concatenate_drake_trajectories,
     finish_build,
+    time_parametrize_toppra,
 )
-from airo_planner import DualArmOmplPlanner, rank_by_distance_to_desirable_configurations, stack_joints
+from airo_planner import DualArmOmplPlanner, PlannerError, rank_by_distance_to_desirable_configurations, stack_joints
 from airo_typing import (
     BoundingBox3DType,
     HomogeneousMatrixType,
@@ -25,6 +26,7 @@ from airo_typing import (
 )
 from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR, bbox_to_mins_and_sizes
 from cloth_tools.controllers.controller import Controller
+from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.drake.scenes import (
     add_cloth_competition_dual_ur5e_scene,
@@ -32,7 +34,7 @@ from cloth_tools.drake.scenes import (
     add_safety_wall_to_builder,
 )
 from cloth_tools.kinematics.constants import TCP_TRANSFORM
-from cloth_tools.planning.grasp_planning import ExhaustedOptionsError, plan_pregrasp_and_grasp_trajectory
+from cloth_tools.planning.grasp_planning import ExhaustedOptionsError, plan_lowest_point_grasp
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.point_clouds.operations import lowest_point
 from cloth_tools.stations.competition_station import CompetitionStation, inverse_kinematics_in_world_fn
@@ -92,7 +94,7 @@ def create_cloth_obstacle_planner(
     robot_diagram_builder = RobotDiagramBuilder()
 
     meshcat = add_meshcat(robot_diagram_builder)
-    meshcat.SetCameraPose([-1.0, 0, 1.0], [0, 0, 0])
+    meshcat.SetCameraPose([-1.5, 0, 1.0], [0, 0, 0])
 
     (arm_left_index, arm_right_index), (
         gripper_left_index,
@@ -150,9 +152,9 @@ class GraspLowestController(Controller):
         self._grasp_pose: HomogeneousMatrixType | None = None
         self._point_cloud: PointCloud | None = None
         self._lowest_point: Vector3DType | None = None
-        self._pregrasp_pose: HomogeneousMatrixType | None = None
+        self._hang_pose: HomogeneousMatrixType | None = None
 
-        self._trajectory_pregrasp: Trajectory | None = None
+        self._trajectory_pregrasp_and_grasp: Trajectory | None = None
         self._trajectory_right_home: Trajectory | None = None
         self._trajectory_hang_left: Trajectory | None = None
         self._hull: o3d.t.geometry.TriangleMesh | None = None
@@ -180,16 +182,12 @@ class GraspLowestController(Controller):
         execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_pregrasp_and_grasp)
         dual_arm.left_manipulator.gripper.close().wait()
 
-        # Execute the grasp
-        # dual_arm.move_linear_to_tcp_pose(self._grasp_pose, None, linear_speed=0.2).wait()
-        # dual_arm.move_linear_to_tcp_pose(self._pregrasp_pose, None, linear_speed=0.2).wait()
-
         # Open the right gripper of the cloth be released
-        # dual_arm.right_manipulator.gripper.open().wait()
-        # execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_right_home)
+        dual_arm.right_manipulator.gripper.open().wait()
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_right_home)
 
         # # Move the left arm to the hang pose
-        # execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_hang_left)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_hang_left)
 
     def _create_cloth_obstacle_planner(self, point_cloud_cloth: PointCloud) -> DualArmOmplPlanner:
         planner, scene, hull = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=False)
@@ -220,10 +218,10 @@ class GraspLowestController(Controller):
             return
 
         lowest_point_ = lowest_point(point_cloud_cropped.points)
-        grasp_pose = lowest_point_grasp_pose(lowest_point_)
+        # grasp_pose = lowest_point_grasp_pose(lowest_point_)
 
         self._lowest_point = lowest_point_
-        self._grasp_pose = grasp_pose
+        # self._grasp_pose = grasp_pose
 
         logger.info(f"Found lowest point in bbox at: {lowest_point_}")
 
@@ -257,26 +255,66 @@ class GraspLowestController(Controller):
         plant_default = self.station.drake_scene.robot_diagram.plant()
         is_state_valid_fn_default = self.station.planner.is_state_valid_fn
 
+        trajectory = None
         try:
-            trajectory = plan_pregrasp_and_grasp_trajectory(
+            trajectory = plan_lowest_point_grasp(
+                lowest_point_,
+                0.05,
                 planner_with_cloth_obstacle,
-                grasp_pose,
                 start_joints_left,
                 start_joints_right,
                 inverse_kinematics_left_fn,
                 inverse_kinematics_right_fn,
                 is_state_valid_fn_default,
                 plant_default,
-                with_left=False,
             )
         except ExhaustedOptionsError as e:
-            logger.warning(f"Failed to plan grasp. Exception was:\n {e}.")
+            logger.error(f"Failed to plan lowest point grasp. Exception was:\n {e}.")
             self._grasp_info = None
             self._grasp_pose = None
             self._trajectory_pregrasp_and_grasp = None
             return
 
         self._trajectory_pregrasp_and_grasp = trajectory
+
+        grasp_joints_left = trajectory.value(trajectory.end_time()).squeeze()[:6].copy()
+
+        self._trajectory_right_home = None
+        home_joints_right = self.station.home_joints_right
+
+        try:
+            path_right_home = self.station.planner.plan_to_joint_configuration(
+                grasp_joints_left, start_joints_right, None, home_joints_right
+            )
+            self._trajectory_right_home = time_parametrize_toppra(plant_default, path_right_home)
+        except PlannerError as e:
+            logger.error(f"Failed to plan right arm to home. Exception was:\n {e}.")
+            return
+
+        self._hang_pose = hang_in_the_air_tcp_pose(left=True)
+        self._trajectory_hang_left = None
+        try:
+            planner = self.station.planner
+            desirable_configurations_hang = [
+                stack_joints(self.station.home_joints_left, self.station.home_joints_right)
+            ]
+            rank_fn_hang = partial(
+                rank_by_distance_to_desirable_configurations, desirable_configurations=desirable_configurations_hang
+            )
+            old_rank_fn = planner.rank_goal_configurations_fn
+            planner.rank_goal_configurations_fn = rank_fn_hang
+
+            path_left_hang = planner.plan_to_tcp_pose(
+                grasp_joints_left,
+                home_joints_right,
+                self._hang_pose,
+                None,
+            )
+            self._trajectory_hang_left = time_parametrize_toppra(plant_default, path_left_hang)
+        except PlannerError as e:
+            planner.rank_goal_configurations_fn = old_rank_fn
+            logger.error(f"Failed to plan left arm to hang pose. Exception was:\n {e}.")
+            return
 
         # Try moving pregrasp pose to several distances from the grasp pose
         # path_pregrasp = None  # To prevent UnboundLocalError
@@ -313,7 +351,7 @@ class GraspLowestController(Controller):
 
         # Here the right arm opens its gripper and moves to its home position
         # Plan for the right arm to move home (don't consider obstacles)
-        self.station.planner
+        # self.station.planner
 
         # we moveL back to the pregrasp pose after grasping
         # pregrasp_joints_left = path_pregrasp[-1][:6]
@@ -361,11 +399,11 @@ class GraspLowestController(Controller):
         if self._trajectory_pregrasp_and_grasp is None:
             return False
 
-        # if self._trajectory_right_home is None:
-        #     return False
+        if self._trajectory_right_home is None:
+            return False
 
-        # if self._trajectory_hang_left is None:
-        #     return False
+        if self._trajectory_hang_left is None:
+            return False
 
         return True
 
@@ -383,28 +421,18 @@ class GraspLowestController(Controller):
 
             rr.log("world/lowest_point", rr.Points3D(positions=[lowest], colors=[(0, 1, 0)], radii=0.02))
 
-        if self._grasp_pose is not None:
-            grasp_pose = self._grasp_pose
-            draw_pose(image, grasp_pose, intrinsics, camera_pose)
-
-            rr_grasp_pose = rr.Transform3D(translation=grasp_pose[0:3, 3], mat3x3=grasp_pose[0:3, 0:3])
-            rr.log("world/grasp_pose", rr_grasp_pose)
-
-        if self._pregrasp_pose is not None:
-            pregrasp_pose = self._pregrasp_pose
-            # draw_pose(image, pregrasp_pose, intrinsics, camera_pose)
-
-            rr_pregrasp_pose = rr.Transform3D(translation=pregrasp_pose[0:3, 3], mat3x3=pregrasp_pose[0:3, 0:3])
-            rr.log("world/pregrasp_pose", rr_pregrasp_pose)
+        if self._hang_pose is not None:
+            hang_pose = self._hang_pose
+            draw_pose(image, hang_pose, intrinsics, camera_pose)
 
         if (
-            self._trajectory_pregrasp is not None
+            self._trajectory_pregrasp_and_grasp is not None
             and self._trajectory_right_home is not None
             and self._trajectory_hang_left is not None
         ):
             scene = self.drake_scene
             trajectory_concatenated = concatenate_drake_trajectories(
-                [self._trajectory_pregrasp, self._trajectory_right_home, self._trajectory_hang_left]
+                [self._trajectory_pregrasp_and_grasp, self._trajectory_right_home, self._trajectory_hang_left]
             )
             animate_dual_joint_trajectory(
                 scene.meshcat,
@@ -448,13 +476,8 @@ class GraspLowestController(Controller):
             return image, cv2.waitKey(1)
 
     def execute_plan(self) -> None:
-        # TODO bring execute_handover() here
-        if self._grasp_pose is None:
-            logger.info("Grasp and hang not executed because no grasp pose was found.")
-            return
-
         if not self._can_execute():
-            logger.info("Grasp and hang not executed because the plan is not complete.")
+            logger.error("Grasp and hang not executed because the plan is not complete.")
             return
 
         self.execute_handover()

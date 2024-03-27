@@ -141,7 +141,7 @@ class CompetitionStation(DualArmStation):
         robot_diagram_builder = RobotDiagramBuilder()
 
         meshcat = add_meshcat(robot_diagram_builder)
-        meshcat.SetCameraPose([-1.0, 0, 1.0], [0, 0, 0])
+        meshcat.SetCameraPose([-1.5, 0, 1.0], [0, 0, 0])
 
         (arm_left_index, arm_right_index), (
             gripper_left_index,
