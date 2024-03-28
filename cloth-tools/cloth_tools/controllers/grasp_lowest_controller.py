@@ -218,6 +218,8 @@ class GraspLowestController(Controller):
             return
 
         lowest_point_ = lowest_point(point_cloud_cropped.points)
+        lowest_point_[2] += 0.025  # small height offset for fingertips
+
         # grasp_pose = lowest_point_grasp_pose(lowest_point_)
 
         self._lowest_point = lowest_point_
@@ -295,6 +297,7 @@ class GraspLowestController(Controller):
         self._trajectory_hang_left = None
         try:
             planner = self.station.planner
+
             desirable_configurations_hang = [
                 stack_joints(self.station.home_joints_left, self.station.home_joints_right)
             ]
@@ -310,7 +313,9 @@ class GraspLowestController(Controller):
                 self._hang_pose,
                 None,
             )
-            self._trajectory_hang_left = time_parametrize_toppra(plant_default, path_left_hang)
+            self._trajectory_hang_left = time_parametrize_toppra(
+                plant_default, path_left_hang, joint_acceleration_limit=0.5
+            )
         except PlannerError as e:
             planner.rank_goal_configurations_fn = old_rank_fn
             logger.error(f"Failed to plan left arm to hang pose. Exception was:\n {e}.")

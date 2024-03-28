@@ -1,5 +1,6 @@
 import sys
 import time
+from functools import partial
 from typing import Any, Optional, Tuple
 
 import cv2
@@ -7,10 +8,12 @@ import numpy as np
 import rerun as rr
 from airo_camera_toolkit.utils.image_converter import ImageConverter
 from airo_drake import animate_dual_joint_trajectory, time_parametrize_toppra
-from airo_planner import PlannerError
+from airo_planner import DualArmOmplPlanner, PlannerError
 from airo_typing import HomogeneousMatrixType, OpenCVIntImageType, PointCloud
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
+from cloth_tools.kinematics.constants import TCP_TRANSFORM
+from cloth_tools.kinematics.inverse_kinematics import inverse_kinematics_in_world_post_processed_fn
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
@@ -95,7 +98,31 @@ class StretchController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        planner = self.station.planner
+        logger.info(f"Start joints left: {start_joints_left}")
+        logger.info(f"Start joints right: {start_joints_right}")
+
+        inverse_kinematics_left_fn = partial(
+            inverse_kinematics_in_world_post_processed_fn,
+            X_W_CB=X_W_LCB,
+            tcp_transform=TCP_TRANSFORM,
+            reference_configuration=start_joints_left,
+        )
+        inverse_kinematics_right_fn = partial(
+            inverse_kinematics_in_world_post_processed_fn,
+            X_W_CB=X_W_RCB,
+            tcp_transform=TCP_TRANSFORM,
+            reference_configuration=start_joints_right,
+        )
+
+        # Make a custom planner that has post-processed IK functions to reduce cloth twisting
+        station = self.station
+        planner = DualArmOmplPlanner(
+            is_state_valid_fn=station.is_state_valid_fn,
+            inverse_kinematics_left_fn=inverse_kinematics_left_fn,
+            inverse_kinematics_right_fn=inverse_kinematics_right_fn,
+            joint_bounds_left=station.joint_bounds_left,
+            joint_bounds_right=station.joint_bounds_right,
+        )
 
         try:
             path_to_stretch = planner.plan_to_tcp_pose(
@@ -113,6 +140,9 @@ class StretchController(Controller):
             plant, path_to_stretch, joint_speed_limit=0.5, joint_acceleration_limit=0.5
         )
         self._trajectory_to_stretch = trajectory_to_stretch
+        end_joints = trajectory_to_stretch.value(trajectory_to_stretch.end_time()).squeeze()
+        logger.info(f"End joints left: {end_joints[:6]}")
+        logger.info(f"End joints right: {end_joints[6:]}")
 
     def execute_stretch_with_force(self):
         station = self.station

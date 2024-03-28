@@ -281,7 +281,7 @@ def make_lowest_grasp_path_candidates(lowest_point: Vector3DType, grasp_depth: f
 
     switch_angle = np.deg2rad(60)
 
-    for angle in np.linspace(0, np.pi / 2, 7):
+    for angle in np.linspace(np.pi / 4, np.pi / 2, 4):
         gripper_open_direction = np.array([1, 0, 0]) if angle <= switch_angle else np.array([0, -1, 0])
         grasp_pose = make_grasp_pose_vertical(lowest_point, gripper_open_direction)
 

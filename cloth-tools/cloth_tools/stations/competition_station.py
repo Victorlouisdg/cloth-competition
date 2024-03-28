@@ -174,6 +174,11 @@ class CompetitionStation(DualArmStation):
             inverse_kinematics_in_world_fn, X_W_CB=X_W_RCB, tcp_transform=TCP_TRANSFORM
         )
 
+        # Save  these so the Controllers can create their own planners
+        self.inverse_kinematics_left_fn = inverse_kinematics_left_fn
+        self.inverse_kinematics_right_fn = inverse_kinematics_right_fn
+        self.is_state_valid_fn = collision_checker.CheckConfigCollisionFree
+
         planner = DualArmOmplPlanner(
             is_state_valid_fn=collision_checker.CheckConfigCollisionFree,
             inverse_kinematics_left_fn=inverse_kinematics_left_fn,
