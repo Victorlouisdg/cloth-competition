@@ -218,7 +218,7 @@ class GraspLowestController(Controller):
             return
 
         lowest_point_ = lowest_point(point_cloud_cropped.points)
-        lowest_point_[2] += 0.025  # small height offset for fingertips
+        lowest_point_[2] += 0.01  # small height offset to grasp with middle of fingertips
 
         # grasp_pose = lowest_point_grasp_pose(lowest_point_)
 
