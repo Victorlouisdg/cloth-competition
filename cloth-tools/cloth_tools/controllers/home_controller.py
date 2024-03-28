@@ -29,8 +29,7 @@ class HomeController(Controller):
 
         # Attributes set by plan()
         self._path = None
-        self._joint_trajectory = None
-        self._time_trajectory = None
+        self._trajectory = None
 
     def plan(self) -> None:
         dual_arm = self.station.dual_arm
@@ -60,17 +59,18 @@ class HomeController(Controller):
         drake_plant = self.station.drake_scene.robot_diagram.plant()
         trajectory = time_parametrize_toppra(drake_plant, path)
 
-        self.trajectory = trajectory
+        self._trajectory = trajectory
 
     def visualize_plan(self) -> None:
         scene = self.station.drake_scene
 
-        animate_dual_joint_trajectory(
-            scene.meshcat, scene.robot_diagram, scene.arm_left_index, scene.arm_right_index, self.trajectory
-        )
+        if self._trajectory is not None:
+            animate_dual_joint_trajectory(
+                scene.meshcat, scene.robot_diagram, scene.arm_left_index, scene.arm_right_index, self._trajectory
+            )
 
     def execute_plan(self) -> None:
-        if self.trajectory is None:
+        if self._trajectory is None:
             logger.info("Home not executed because no trajectory was found.")
             return
 
@@ -89,7 +89,7 @@ class HomeController(Controller):
         if self.open_right_gripper:
             right_opened.wait()
 
-        execute_dual_arm_drake_trajectory(dual_arm, self.trajectory)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory)
 
     def execute_interactive(self) -> None:
         while True:

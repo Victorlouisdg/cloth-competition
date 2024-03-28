@@ -151,7 +151,7 @@ class StretchController(Controller):
         X_W_LCB = station.left_arm_pose
         X_W_RCB = station.right_arm_pose
 
-        tension_threshold = 4.0
+        tension_threshold = 2.5  # Newton -> reduced from 4.0 to prevent low-friction cloth from slipping
         tcp_distance_threshold = 0.9  # never move more that this distance apart
 
         servo_period = 0.05  # seconds
