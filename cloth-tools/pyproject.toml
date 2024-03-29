@@ -23,7 +23,7 @@ dependencies = [
   "rerun-sdk",
   "tqdm",
   "requests",
-  "airo-models >= 0.0.7",
+  "airo-planner",
 ]
 
 [project.urls]

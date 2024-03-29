@@ -57,7 +57,8 @@ def grasp_hanging_cloth_pose(
 
     # Pointing gripper Y up or down leads to the gripper opening horizontally
     # I chose Y-down here because it's closer the other poses used in the controllers
-    Y = np.array([0, 0, -1])  # default Y
+    # Y = np.array([0, 0, -1])  # default Y
+    Y = np.array([0, 0, 1])  # Trying the positive instead to attempt to reduce twisting issue
 
     # Handle rare case where Z is parallel to default Y
     if np.abs(np.dot(Y, Z)) > 0.99:

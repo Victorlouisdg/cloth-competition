@@ -4,8 +4,8 @@ import time
 import numpy as np
 import rerun as rr
 from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.stations.competition_station import CompetitionStation
+from cloth_tools.trajectory_execution import execute_dual_arm_trajectory, time_parametrize_toppra
 from cloth_tools.wrench_smoother import WrenchSmoother
 from linen.elemental.move_backwards import move_pose_backwards
 from loguru import logger

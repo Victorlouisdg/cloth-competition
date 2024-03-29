@@ -1,21 +1,23 @@
 import sys
 import time
+from functools import partial
 from typing import Any, Optional, Tuple
 
 import cv2
 import numpy as np
 import rerun as rr
 from airo_camera_toolkit.utils.image_converter import ImageConverter
+from airo_drake import animate_dual_joint_trajectory, time_parametrize_toppra
+from airo_planner import DualArmOmplPlanner, PlannerError
 from airo_typing import HomogeneousMatrixType, OpenCVIntImageType, PointCloud
 from cloth_tools.controllers.controller import Controller
 from cloth_tools.controllers.grasp_highest_controller import hang_in_the_air_tcp_pose
-from cloth_tools.controllers.grasp_lowest_controller import create_cloth_obstacle_planner
-from cloth_tools.drake.visualization import publish_dual_arm_trajectory
-from cloth_tools.ompl.dual_arm_planner import DualArmOmplPlanner
-from cloth_tools.path.execution import execute_dual_arm_trajectory, time_parametrize_toppra
+from cloth_tools.kinematics.constants import TCP_TRANSFORM
+from cloth_tools.kinematics.inverse_kinematics import inverse_kinematics_in_world_post_processed_fn
 from cloth_tools.point_clouds.camera import get_image_and_filtered_point_cloud
 from cloth_tools.stations.competition_station import CompetitionStation
 from cloth_tools.stations.dual_arm_station import DualArmStation
+from cloth_tools.trajectory_execution import execute_dual_arm_drake_trajectory
 from cloth_tools.visualization.opencv import draw_pose
 from cloth_tools.visualization.rerun import rr_log_camera
 from cloth_tools.wrench_smoother import WrenchSmoother
@@ -54,28 +56,6 @@ class StretchController(Controller):
         # Setting up Rerun
         rr.init(window_name, spawn=True)
         rr_log_camera(camera, camera_pose)
-
-    def _create_cloth_obstacle_planner(self, point_cloud_cloth: PointCloud) -> DualArmOmplPlanner:
-        (
-            planner,
-            hull,
-            diagram,
-            context,
-            collision_checker,
-            meshcat,
-            arm_indices,
-            gripper_indices,
-        ) = create_cloth_obstacle_planner(self.station, point_cloud_cloth, left_hanging=True)
-        # Save all this for visualization
-        self._hull = hull
-        self._diagram = diagram
-        self._context = context
-        self._collision_checker = collision_checker
-        self._meshcat = meshcat
-        self._arm_indices = arm_indices
-        self._gripper_indices = gripper_indices
-
-        return planner
 
     def plan(self) -> None:
         logger.info(f"{self.__class__.__name__}: Creating new plan.")
@@ -118,23 +98,51 @@ class StretchController(Controller):
         start_joints_left = dual_arm.left_manipulator.get_joint_configuration()
         start_joints_right = dual_arm.right_manipulator.get_joint_configuration()
 
-        planner = self.station.planner
+        logger.info(f"Start joints left: {start_joints_left}")
+        logger.info(f"Start joints right: {start_joints_right}")
 
-        path_to_stretch = planner.plan_to_tcp_pose(
-            start_joints_left, start_joints_right, stretch_pose_left, stretch_pose_right
+        inverse_kinematics_left_fn = partial(
+            inverse_kinematics_in_world_post_processed_fn,
+            X_W_CB=X_W_LCB,
+            tcp_transform=TCP_TRANSFORM,
+            reference_configuration=start_joints_left,
         )
-        self._path_to_stretch = path_to_stretch
+        inverse_kinematics_right_fn = partial(
+            inverse_kinematics_in_world_post_processed_fn,
+            X_W_CB=X_W_RCB,
+            tcp_transform=TCP_TRANSFORM,
+            reference_configuration=start_joints_right,
+        )
 
-        if path_to_stretch is None:
+        # Make a custom planner that has post-processed IK functions to reduce cloth twisting
+        station = self.station
+        planner = DualArmOmplPlanner(
+            is_state_valid_fn=station.is_state_valid_fn,
+            inverse_kinematics_left_fn=inverse_kinematics_left_fn,
+            inverse_kinematics_right_fn=inverse_kinematics_right_fn,
+            joint_bounds_left=station.joint_bounds_left,
+            joint_bounds_right=station.joint_bounds_right,
+        )
+
+        try:
+            path_to_stretch = planner.plan_to_tcp_pose(
+                start_joints_left, start_joints_right, stretch_pose_left, stretch_pose_right
+            )
+            self._path_to_stretch = path_to_stretch
+        except PlannerError as e:
+            logger.info(f"Failed to plan to stretch pose. Exception was:\n {e}.")
             return
 
         # Time parametrize the path
         # Move very slowly
-        trajectory_to_stretch, time_trajectory_to_stretch = time_parametrize_toppra(
-            path_to_stretch, self.station._diagram.plant(), joint_speed_limit=0.5, joint_acceleration_limit=0.5
+        plant = self.station.drake_scene.robot_diagram.plant()
+        trajectory_to_stretch = time_parametrize_toppra(
+            plant, path_to_stretch, joint_speed_limit=0.5, joint_acceleration_limit=0.5
         )
         self._trajectory_to_stretch = trajectory_to_stretch
-        self._time_trajectory_to_stretch = time_trajectory_to_stretch
+        end_joints = trajectory_to_stretch.value(trajectory_to_stretch.end_time()).squeeze()
+        logger.info(f"End joints left: {end_joints[:6]}")
+        logger.info(f"End joints right: {end_joints[6:]}")
 
     def execute_stretch_with_force(self):
         station = self.station
@@ -143,7 +151,7 @@ class StretchController(Controller):
         X_W_LCB = station.left_arm_pose
         X_W_RCB = station.right_arm_pose
 
-        tension_threshold = 4.0
+        tension_threshold = 2.0  # Newton -> reduced from 4.0 to prevent low-friction cloth from slipping
         tcp_distance_threshold = 0.9  # never move more that this distance apart
 
         servo_period = 0.05  # seconds
@@ -164,8 +172,9 @@ class StretchController(Controller):
         servo_awaitable = None
 
         warmup = 1.0
-        timeout = 10.0
+        timeout = 15.0
         time_start = time.time()
+        time_last_log = 0.0
 
         while True:
             wrench_left = dual_arm.left_manipulator.rtde_receive.getActualTCPForce()
@@ -184,8 +193,11 @@ class StretchController(Controller):
                 rr.log(f"/torque/right/{label}", rr.Scalar(wrench_smoothed_right[i]))
 
             tension = (wrench_smoothed_left[0] - wrench_smoothed_right[0]) / 2.0
-            logger.info(f"Tension: {tension:.1f} N")
             rr.log("/force/tension", rr.Scalar(tension))
+
+            if time.time() - time_last_log > 1.0:
+                logger.info(f"Tension: {tension:.2f} N")
+                time_last_log = time.time()
 
             if time.time() - time_start < warmup:
                 # During the warmup time don't servo or check for tension
@@ -227,7 +239,7 @@ class StretchController(Controller):
         dual_arm = self.station.dual_arm
 
         # Execute the path to the strech start poses
-        execute_dual_arm_trajectory(dual_arm, self._trajectory_to_stretch, self._time_trajectory_to_stretch)
+        execute_dual_arm_drake_trajectory(dual_arm, self._trajectory_to_stretch)
 
         # Execute the stretch with force
         self.execute_stretch_with_force()
@@ -261,16 +273,15 @@ class StretchController(Controller):
             rr_pose = rr.Transform3D(translation=pose[0:3, 3], mat3x3=pose[0:3, 0:3] @ np.identity(3) * 0.1)
             rr.log("world/stretch_pose_right", rr_pose)
 
-        if self._path_to_stretch is not None:
-            trajectory = self._trajectory_to_stretch
-            time_trajectory = self._time_trajectory_to_stretch
-            publish_dual_arm_trajectory(
-                trajectory,
-                time_trajectory,
-                self.station._meshcat,
-                self.station._diagram,
-                self.station._context,
-                *self.station._arm_indices,
+        if self._trajectory_to_stretch is not None:
+            scene = self.station.drake_scene
+
+            animate_dual_joint_trajectory(
+                scene.meshcat,
+                scene.robot_diagram,
+                scene.arm_left_index,
+                scene.arm_right_index,
+                self._trajectory_to_stretch,
             )
 
         if self._point_cloud is not None:
@@ -321,8 +332,8 @@ class StretchController(Controller):
             self.execute_interactive()
         else:
             # Autonomous execution
-            self.plan()
-            # self.visualize_plan()
+            while not self._can_execute():
+                self.plan()
             self.execute_plan()
 
         # Close cv2 window to reduce clutter

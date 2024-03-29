@@ -1,6 +1,5 @@
-from cloth_tools.dummy import dummy_func
+from cloth_tools.dataset.format import COMPETITION_OBSERVATION_FILENAMES
 
 
 def test_dummy():
-    d = dummy_func()
-    assert d
+    assert COMPETITION_OBSERVATION_FILENAMES

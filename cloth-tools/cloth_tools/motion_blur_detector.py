@@ -46,6 +46,7 @@ class MotionBlurDetector:
             True if the motion blur stabilized within the timeout, False otherwise
         """
         time_start = time.time()
+        time_last_log = 0.0
 
         if self.visualize:
             cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
@@ -67,7 +68,11 @@ class MotionBlurDetector:
             variance_of_variances_smoothed = np.var(self.variances_smoothed[-history:])
             self.variances_of_variances_smoothed.append(variance_of_variances_smoothed)
 
-            logger.info(f"Variance of the smoothed variance of the Laplacian: {variance_of_variances_smoothed:.2f}")
+            if time.time() - time_last_log > 1.0:
+                logger.info(
+                    f"Variance of the smoothed variance of the Laplacian: {variance_of_variances_smoothed:.2f}"
+                )
+                time_last_log = time.time()
 
             if self.log_to_rerun:
                 import rerun as rr
