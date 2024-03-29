@@ -172,7 +172,7 @@ class StretchController(Controller):
         servo_awaitable = None
 
         warmup = 1.0
-        timeout = 10.0
+        timeout = 15.0
         time_start = time.time()
         time_last_log = 0.0
 
@@ -196,7 +196,7 @@ class StretchController(Controller):
             rr.log("/force/tension", rr.Scalar(tension))
 
             if time.time() - time_last_log > 1.0:
-                logger.info(f"Tension: {tension:.1f} N")
+                logger.info(f"Tension: {tension:.2f} N")
                 time_last_log = time.time()
 
             if time.time() - time_start < warmup:
