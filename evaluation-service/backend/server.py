@@ -48,13 +48,13 @@ def create_app(datasets_directory, predictor):
         masks, scores, logits = predictor.predict(
             point_coords=input_point,
             point_labels=input_label,
-            multimask_output=True,
+            multimask_output=False,
         )
 
         print(masks.shape, scores.shape, logits.shape)
 
         # TODO: allow using any of the masks
-        coords = np.where(masks[2])
+        coords = np.where(masks[0])
         combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
 
         # Return the new coordinates as a response
