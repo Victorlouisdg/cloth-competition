@@ -4,12 +4,8 @@ import { Stage, Layer, Image, Line, Text } from 'react-konva';
 import axios from 'axios';
 import Select from 'react-select';
 
-const calculateScale = (containerSize, imageSize) => {
-  return containerSize / imageSize;
-};
-
 const App = () => {
-  const [imageName, setImageName] = useState(null);
+  const [datasetName, setDatasetName] = useState(null);
   const [image, setImage] = useState(null);
   const [coordinates, setCoordinates] = useState([]);
   const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
@@ -21,9 +17,9 @@ const App = () => {
   }, []);
 
   const fetchAvailableFiles = () => {
-    axios.get('http://127.0.0.1:5000/api/images')
+    axios.get('http://127.0.0.1:5000/api/datasets')
       .then(response => {
-        setAvailableFiles(response.data.images.map(file => ({ value: file, label: file })));
+        setAvailableFiles(response.data.datasets.map(file => ({ value: file, label: file })));
       })
       .catch(error => {
         console.error('Error fetching available files:', error);
@@ -31,7 +27,7 @@ const App = () => {
   };
 
   const handleChange = (selectedOption) => {
-    setImageName(selectedOption.value);
+    setDatasetName(selectedOption.value);
     handleImageLoad(selectedOption.value);
   };
 
@@ -43,7 +39,7 @@ const App = () => {
   const handleImageLoad = (imageToLoad) => {
     setCoordinates([]);
     const img = new window.Image();
-    img.src = `http://127.0.0.1:5000/images/${imageToLoad}`;
+    img.src = `http://127.0.0.1:5000/datasets/${imageToLoad}`;
     img.onload = () => {
       const maxWidth = window.innerWidth * 0.7;
       const scale = maxWidth / img.width;
@@ -55,7 +51,7 @@ const App = () => {
   const handleImageClick = (event) => {
     const { layerX, layerY } = event.evt;
     console.log('layerX:', layerX, 'layerY:', layerY);
-    axios.post('http://127.0.0.1:5000/api/coordinates', { x: layerX / image.scale,  y: layerY / image.scale, imageName})
+    axios.post('http://127.0.0.1:5000/api/coordinates', { x: layerX / image.scale,  y: layerY / image.scale, datasetName})
       .then(response => {
         console.log('Response:', response.data.coordinates);
         const scaledCoordinates = response.data.coordinates.map(coord => coord * image.scale);
@@ -70,10 +66,10 @@ const App = () => {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ marginBottom: '20px' }}>
         <Select
-          value={availableFiles.find(file => file.value === imageName)}
+          value={availableFiles.find(file => file.value === datasetName)}
           onChange={handleChange}
           options={availableFiles}
-          placeholder="Select an image"
+          placeholder="Select a data folder"
           styles={{
             container: (provided, state) => ({
               ...provided,

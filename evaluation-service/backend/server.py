@@ -16,19 +16,19 @@ app = Flask(__name__)
 CORS(app)  #
 
 
-def create_app(image_directory, predictor):
+def create_app(datasets_directory, predictor):
     # Define a route to serve images
-    @app.route("/images/<image_name>")
-    def get_image(image_name):
+    @app.route("/datasets/<dataset_name>")
+    def get_image(dataset_name):
         # Construct the image path using the provided directory
-        image_path = f"{image_directory}/{image_name}"
-        return send_file(image_path, mimetype="image/jpeg")  # Adjust mimetype as per your image type
+        image_path = f"{datasets_directory}/{dataset_name}/observation_result/image_left.png"
+        return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
 
-    @app.route("/api/images", methods=["GET"])
+    @app.route("/api/datasets", methods=["GET"])
     def get_images():
-        image_names = os.listdir(image_directory)
+        dataset_names = os.listdir(datasets_directory)
 
-        return jsonify({"images": image_names})
+        return jsonify({"datasets": dataset_names})
 
     @app.route("/api/coordinates", methods=["POST"])
     def get_coordinates():
@@ -36,9 +36,9 @@ def create_app(image_directory, predictor):
         data = request.get_json()
         x = data["x"]
         y = data["y"]
-        image_name = data["imageName"]
+        dataset_name = data["datasetName"]
 
-        image = cv2.imread(f"{image_directory}/{image_name}")
+        image = cv2.imread(f"{datasets_directory}/{dataset_name}/observation_result/image_left.png")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         predictor.set_image(image)
@@ -64,8 +64,8 @@ def create_app(image_directory, predictor):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Flask server to serve images")
-    parser.add_argument("image_directory", type=str, help="Path to the directory containing images")
+    parser = argparse.ArgumentParser(description="Run Flask server to serve the competition datasets")
+    parser.add_argument("datasets_directory", type=str, help="Path to the directory containing the datasets")
     args = parser.parse_args()
 
     # TODO: use best model
@@ -82,5 +82,5 @@ if __name__ == "__main__":
 
     predictor = SamPredictor(sam)
 
-    app = create_app(args.image_directory, predictor)
+    app = create_app(args.datasets_directory, predictor)
     app.run(debug=True)
