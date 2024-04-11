@@ -16,36 +16,43 @@ app = Flask(__name__)
 CORS(app)  #
 
 
-def create_app(datasets_directory, predictor):
+def create_app(scenes_directory, predictor):
     # Define a route to serve images
-    @app.route("/datasets/<scene_name>")
+    @app.route("/scenes/<scene_name>/image")
     def get_image(scene_name):
         # Construct the image path using the provided directory
-        image_path = f"{datasets_directory}/{scene_name}/observation_result/image_left.png"
+        image_path = f"{scenes_directory}/{scene_name}/observation_result/image_left.png"
+        return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
+    
+    # Define a route to serve images
+    @app.route("/scenes/<scene_name>/mask")
+    def get_mask(scene_name):
+        # Construct the image path using the provided directory
+        image_path = f"{scenes_directory}/{scene_name}/observation_result/mask.png"
         return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
 
-    @app.route("/api/datasets", methods=["GET"])
-    def get_images():
-        scene_names = os.listdir(datasets_directory)
-        datasets_info = []
+    @app.route("/api/scenes", methods=["GET"])
+    def get_scenes():
+        scene_names = os.listdir(scenes_directory)
+        scenes_info = []
 
         for scene_name in scene_names:
-            dataset_path = os.path.join(datasets_directory, scene_name)
+            dataset_path = os.path.join(scenes_directory, scene_name)
             last_modified_time = time.ctime(os.path.getmtime(dataset_path))
-            mask_exists = os.path.exists(f"{datasets_directory}/{scene_name}/observation_result/mask.png")
+            mask_exists = os.path.exists(f"{scenes_directory}/{scene_name}/observation_result/mask.png")
 
-            datasets_info.append({
+            scenes_info.append({
                 'sceneName': scene_name,
                 'lastModifiedTime': last_modified_time,
                 'maskExists': mask_exists
             })
 
-        return jsonify({"datasets": datasets_info})
+        return jsonify({"scenes": scenes_info})
     
     @app.route("/api/coordinates/<scene_name>", methods=["GET"])
     def get_mask_coordinates(scene_name):
 
-        mask = cv2.imread(f"{datasets_directory}/{scene_name}/observation_result/mask.png")
+        mask = cv2.imread(f"{scenes_directory}/{scene_name}/observation_result/mask.png")
 
         coords = np.where(mask > 0)
         combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
@@ -59,7 +66,7 @@ def create_app(datasets_directory, predictor):
         y = data["y"]
         scene_name = data["sceneName"]
 
-        image = cv2.imread(f"{datasets_directory}/{scene_name}/observation_result/image_left.png")
+        image = cv2.imread(f"{scenes_directory}/{scene_name}/observation_result/image_left.png")
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
         predictor.set_image(image)
@@ -76,7 +83,7 @@ def create_app(datasets_directory, predictor):
         coords = np.where(masks[0])
         combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
 
-        cv2.imwrite(f"{datasets_directory}/{scene_name}/observation_result/mask.png", (masks[0] * 255).astype(np.uint8))
+        cv2.imwrite(f"{scenes_directory}/{scene_name}/observation_result/mask.png", (masks[0] * 255).astype(np.uint8))
 
         # Return the new coordinates as a response
         return jsonify({"coordinates": combined_coords.tolist()})
@@ -85,8 +92,8 @@ def create_app(datasets_directory, predictor):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run Flask server to serve the competition datasets")
-    parser.add_argument("datasets_directory", type=str, help="Path to the directory containing the datasets")
+    parser = argparse.ArgumentParser(description="Run Flask server to serve the competition scenes")
+    parser.add_argument("scenes_directory", type=str, help="Path to the directory containing the scenes")
     parser.add_argument("--model", default="b", type=str, choices=['h', 'l', 'b'], help="Model size (h, l, or b)")
     parser.add_argument('--cuda', action='store_true', help='Use CUDA if available')
 
@@ -116,5 +123,5 @@ if __name__ == "__main__":
 
     predictor = SamPredictor(sam)
 
-    app = create_app(args.datasets_directory, predictor)
+    app = create_app(args.scenes_directory, predictor)
     app.run(debug=True)

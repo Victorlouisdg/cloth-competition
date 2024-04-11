@@ -12,19 +12,68 @@ const App = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [scene, setScene] = useState(null);
   const [image, setImage] = useState(null);
+  const [mask, setMask] = useState(null);
   const [coordinates, setCoordinates] = useState([]);
   const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
   const [availableFiles, setAvailableFiles] = useState([]);
 
   const [toggleState, setToggleState] = useState(false);
 
+  const fetchSceneImageAndMaybeMask = async () => {
+    console.log('Scene changed:', scene);
+    if (!scene) return;
+
+    try {
+      setIsLoading(true);
+      if (scene.maskExists) {
+        const coordinates = await axios.get(`http://127.0.0.1:5000/api/coordinates/${scene.sceneName}`);
+        console.log('Coordinates:', coordinates.data.coordinates);
+        //setCoordinates(coordinates.data.coordinates);
+        const mask = new window.Image();
+        mask.src = ""
+        mask.src = `http://127.0.0.1:5000/scenes/${scene.sceneName}/mask?${Date.now()}`;
+        mask.onload = () => {
+          console.log('Mask loaded:', mask);
+          const maxWidth = window.innerWidth * 0.7;
+          const scale = maxWidth / mask.width;
+          setMask({ mask, scale });
+        };
+      }
+      const img = new window.Image();
+      img.src = `http://127.0.0.1:5000/scenes/${scene.sceneName}/image`;
+      img.onload = () => {
+        const maxWidth = window.innerWidth * 0.7;
+        const scale = maxWidth / img.width;
+        setImage({ img, scale });
+      };
+      
+    } catch (error) {
+      console.error('Error fetching scene image:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const fetchAvailableFiles = async () => {
+    setIsLoading(true);
+    try {
+      const initialAvailableFiles = await getAvailableFiles();
+      setAvailableFiles(initialAvailableFiles);
+    } catch (error) {
+      console.error('Error fetching available files:', error);
+    } finally {
+      setIsLoading(false);
+    }
+    
+  }
+
   const handleToggle = () => {
     setToggleState(!toggleState);
   };
 
   const handleRefresh = async () => {
-    const initialAvailableFiles = await getAvailableFiles();
-    setAvailableFiles(initialAvailableFiles);
+    fetchAvailableFiles();
+    fetchSceneImageAndMaybeMask();
   }
 
   useEffect(() => {
@@ -41,7 +90,8 @@ const App = () => {
             console.log('Setting new scene:', sceneToSet);
             setScene(sceneToSet);
             setImage(null);
-            setCoordinates([]);
+            setMask(null);
+            // setCoordinates([]);
           }
         }, 3000);
       }
@@ -59,56 +109,18 @@ const App = () => {
   }, [toggleState, scene])
 
   useEffect(() => {
-    const fetchAvailableFiles = async () => {
-      setIsLoading(true);
-      try {
-        const initialAvailableFiles = await getAvailableFiles();
-        setAvailableFiles(initialAvailableFiles);
-      } catch (error) {
-        console.error('Error fetching available files:', error);
-      } finally {
-        setIsLoading(false);
-      }
-      
-    }
-
     fetchAvailableFiles();
   }, []);
 
   useEffect(() => {
-    const fetchSceneImageAndMaybeMask = async () => {
-      console.log('Scene changed:', scene);
-      if (!scene) return;
-
-      try {
-        setIsLoading(true);
-        if (scene.maskExists) {
-          const coordinates = await axios.get(`http://127.0.0.1:5000/api/coordinates/${scene.sceneName}`);
-          console.log('Coordinates:', coordinates.data.coordinates);
-          setCoordinates(coordinates.data.coordinates);
-        }
-        const img = new window.Image();
-        img.src = `http://127.0.0.1:5000/datasets/${scene.sceneName}`;
-        img.onload = () => {
-          const maxWidth = window.innerWidth * 0.7;
-          const scale = maxWidth / img.width;
-          console.log('Image width:', img.width, 'Image height:', img.height, scale);
-          setImage({ img, scale });
-        };
-      } catch (error) {
-        console.error('Error fetching scene image:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    }
 
     fetchSceneImageAndMaybeMask();
   }, [scene]);
 
   const getAvailableFiles = async () => {
     try {
-      const response = await axios.get('http://127.0.0.1:5000/api/datasets');
-      return response.data.datasets
+      const response = await axios.get('http://127.0.0.1:5000/api/scenes');
+      return response.data.scenes
     } catch (error) {
       console.error('Error fetching available files:', error);
       return [];
@@ -116,8 +128,10 @@ const App = () => {
   };
 
   const handleChange = (selectedOption) => {
+    if (selectedOption === scene) return;
     setImage(null);
-    setCoordinates([]);
+    setMask(null);
+    //setCoordinates([]);
     setScene(selectedOption.value);
   };
 
@@ -127,24 +141,23 @@ const App = () => {
   };
 
 
-  const handleImageClick = async (event) => {
+  const handleImageClick = (event) => {
     setIsLoading(true);
     console.log('Image clicked:', event);
-    try {
-      const { layerX, layerY } = event.evt;
-      console.log('layerX:', layerX, 'layerY:', layerY);
-      axios.post('http://127.0.0.1:5000/api/annotate', { x: layerX / image.scale,  y: layerY / image.scale, sceneName: scene.sceneName})
-        .then(response => {
-          setCoordinates(response.data.coordinates);
-        })
-        .catch(error => {
-          console.error('Error fetching coordinates:', error);
-        });
-    } catch (error) {
-      console.error('Error fetching coordinates:', error);
-    } finally {
-      setIsLoading(false);
-    }
+    const { layerX, layerY } = event.evt;
+    console.log('layerX:', layerX, 'layerY:', layerY);
+    axios.post('http://127.0.0.1:5000/api/annotate', { x: layerX / image.scale,  y: layerY / image.scale, sceneName: scene.sceneName})
+      .then(response => {
+        console.log('Response:', response);
+        fetchSceneImageAndMaybeMask();
+        //setCoordinates(response.data.coordinates);
+      })
+      .catch(error => {
+        console.error('Error fetching coordinates:', error);
+      }).finally(() => {
+        console.log('Finally');
+        setIsLoading(false);
+      });
     
   };
 
@@ -152,7 +165,6 @@ const App = () => {
 
   const scaledCoordinates = !!image ? coordinates.map(coord => coord * image.scale) : [];
 
-  console.log("loading", isLoading )
   return (
   <>
     <Modal
@@ -176,7 +188,7 @@ const App = () => {
         }
       }}
     >
-      <ClipLoader color="#ffffff" loading={true} size={30} />
+        <ClipLoader color="#ffffff" loading={true} size={30} />
     </Modal>
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '50%' }}>
@@ -211,16 +223,22 @@ const App = () => {
             {image && (
               <Image
                 image={image.img}
-                onClick={(evt) => {
-                  setIsLoading(true);
-                  handleImageClick(evt)
-                }}
+                onClick={handleImageClick}
                 scaleX={image.scale}
                 scaleY={image.scale}
               />
             )}
-            <Polygon coordinates={scaledCoordinates} />
-            {image && <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />}
+            {mask && (
+              <Image
+                image={mask.mask}
+                onClick={handleImageClick}
+                opacity={0.5}
+                scaleX={mask.scale}
+                scaleY={mask.scale}
+              />
+            )}
+            {/* <Polygon coordinates={scaledCoordinates} />
+            {image && <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />} */}
           </Layer>
         </Stage>
       </div>)}
