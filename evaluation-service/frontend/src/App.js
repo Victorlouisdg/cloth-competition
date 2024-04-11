@@ -1,12 +1,15 @@
 // App.js
+import './App.css';
 import React, { useState, useEffect } from 'react';
 import { Stage, Layer, Image, Line, Text } from 'react-konva';
 import axios from 'axios';
 import Select from 'react-select';
 import Switch from "react-switch";
 import ClipLoader from "react-spinners/ClipLoader";
+import Modal from 'react-modal';
 
 const App = () => {
+  const [isLoading, setIsLoading] = useState(false);
   const [scene, setScene] = useState(null);
   const [image, setImage] = useState(null);
   const [coordinates, setCoordinates] = useState([]);
@@ -18,6 +21,11 @@ const App = () => {
   const handleToggle = () => {
     setToggleState(!toggleState);
   };
+
+  const handleRefresh = async () => {
+    const initialAvailableFiles = await getAvailableFiles();
+    setAvailableFiles(initialAvailableFiles);
+  }
 
   useEffect(() => {
     let intervalId;
@@ -52,8 +60,16 @@ const App = () => {
 
   useEffect(() => {
     const fetchAvailableFiles = async () => {
-      const initialAvailableFiles = await getAvailableFiles();
-      setAvailableFiles(initialAvailableFiles);
+      setIsLoading(true);
+      try {
+        const initialAvailableFiles = await getAvailableFiles();
+        setAvailableFiles(initialAvailableFiles);
+      } catch (error) {
+        console.error('Error fetching available files:', error);
+      } finally {
+        setIsLoading(false);
+      }
+      
     }
 
     fetchAvailableFiles();
@@ -64,21 +80,26 @@ const App = () => {
       console.log('Scene changed:', scene);
       if (!scene) return;
 
-      if (scene.maskExists) {
-        const coordinates = await axios.get(`http://127.0.0.1:5000/api/coordinates/${scene.sceneName}`);
-        console.log('Coordinates:', coordinates.data.coordinates);
-        setCoordinates(coordinates.data.coordinates);
+      try {
+        setIsLoading(true);
+        if (scene.maskExists) {
+          const coordinates = await axios.get(`http://127.0.0.1:5000/api/coordinates/${scene.sceneName}`);
+          console.log('Coordinates:', coordinates.data.coordinates);
+          setCoordinates(coordinates.data.coordinates);
+        }
+        const img = new window.Image();
+        img.src = `http://127.0.0.1:5000/datasets/${scene.sceneName}`;
+        img.onload = () => {
+          const maxWidth = window.innerWidth * 0.7;
+          const scale = maxWidth / img.width;
+          console.log('Image width:', img.width, 'Image height:', img.height, scale);
+          setImage({ img, scale });
+        };
+      } catch (error) {
+        console.error('Error fetching scene image:', error);
+      } finally {
+        setIsLoading(false);
       }
-      const img = new window.Image();
-      img.src = `http://127.0.0.1:5000/datasets/${scene.sceneName}`;
-      img.onload = () => {
-        const maxWidth = window.innerWidth * 0.7;
-        const scale = maxWidth / img.width;
-        console.log('Image width:', img.width, 'Image height:', img.height, scale);
-        setImage({ img, scale });
-      };
-      
-      
     }
 
     fetchSceneImageAndMaybeMask();
@@ -106,26 +127,60 @@ const App = () => {
   };
 
 
-  const handleImageClick = (event) => {
-    const { layerX, layerY } = event.evt;
-    console.log('layerX:', layerX, 'layerY:', layerY);
-    axios.post('http://127.0.0.1:5000/api/annotate', { x: layerX / image.scale,  y: layerY / image.scale, sceneName: scene.sceneName})
-      .then(response => {
-        setCoordinates(response.data.coordinates);
-      })
-      .catch(error => {
-        console.error('Error fetching coordinates:', error);
-      });
+  const handleImageClick = async (event) => {
+    setIsLoading(true);
+    console.log('Image clicked:', event);
+    try {
+      const { layerX, layerY } = event.evt;
+      console.log('layerX:', layerX, 'layerY:', layerY);
+      axios.post('http://127.0.0.1:5000/api/annotate', { x: layerX / image.scale,  y: layerY / image.scale, sceneName: scene.sceneName})
+        .then(response => {
+          setCoordinates(response.data.coordinates);
+        })
+        .catch(error => {
+          console.error('Error fetching coordinates:', error);
+        });
+    } catch (error) {
+      console.error('Error fetching coordinates:', error);
+    } finally {
+      setIsLoading(false);
+    }
+    
   };
 
   const selectOptions = availableFiles.map(file => ({ value: file, label: file.sceneName }));
 
   const scaledCoordinates = !!image ? coordinates.map(coord => coord * image.scale) : [];
 
+  console.log("loading", isLoading )
   return (
+  <>
+    <Modal
+      isOpen={isLoading}
+      contentLabel="Loading Modal"
+      ariaHideApp={false}
+      style={{
+        overlay: {
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(0, 0, 0, 0.5)'
+        },
+        content: {
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          background: 'none',
+          border: 'none',
+          padding: '0'
+        }
+      }}
+    >
+      <ClipLoader color="#ffffff" loading={true} size={30} />
+    </Modal>
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '50%' }}>
-      
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
       <Select
           value={selectOptions.find(option => option.value.sceneName === scene?.sceneName)}
           onChange={handleChange}
@@ -138,6 +193,8 @@ const App = () => {
             }),
           }}
         />
+        <button className="refresh-button" onClick={handleRefresh}>Refresh</button>
+        </div>
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
       <div style={{ marginRight: '10px', marginLeft: '10px' }}>
         Auto check for unannotated data
@@ -148,13 +205,16 @@ const App = () => {
         />
       </div>
       </div>
-      {!!image ? (<div style={{ marginTop: '20px', border: '1px solid #ccc', borderRadius: '5px', padding: '10px' }}>
+      {!!image && (<div style={{ marginTop: '20px', border: '1px solid #ccc', borderRadius: '5px', padding: '10px' }}>
         <Stage onMouseMove={handleMouseMove} width={image ? image.img.width * image.scale : 800} height={image ? image.img.height * image.scale : 600}>
           <Layer>
             {image && (
               <Image
                 image={image.img}
-                onClick={handleImageClick}
+                onClick={(evt) => {
+                  setIsLoading(true);
+                  handleImageClick(evt)
+                }}
                 scaleX={image.scale}
                 scaleY={image.scale}
               />
@@ -163,12 +223,9 @@ const App = () => {
             {image && <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />}
           </Layer>
         </Stage>
-      </div>) :
-      <div style={{ marginTop: '200px' }}>
-       {!!scene && <ClipLoader loading={true} size={20} />}
-       </div>
-       }
+      </div>)}
     </div>
+    </>
   );
 };
 

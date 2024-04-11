@@ -87,15 +87,28 @@ def create_app(datasets_directory, predictor):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Flask server to serve the competition datasets")
     parser.add_argument("datasets_directory", type=str, help="Path to the directory containing the datasets")
-    args = parser.parse_args()
+    parser.add_argument("--model", default="b", type=str, choices=['h', 'l', 'b'], help="Model size (h, l, or b)")
+    parser.add_argument('--cuda', action='store_true', help='Use CUDA if available')
 
-    # TODO: use best model
+    
+
     sam_checkpoint = "../weights/sam_vit_b_01ec64.pth"
     model_type = "vit_b"
-
     device = "cpu"
 
-    if torch.cuda.is_available():
+    args = parser.parse_args()
+
+    cuda = args.cuda
+    model_size = args.model
+
+    if model_size == "h":
+        sam_checkpoint = "../weights/sam_vit_h_4b8939.pth"
+        model_type = "vit_h"
+    elif model_size == "l":
+        sam_checkpoint = "../weights/sam_vit_l_0b3195.pth"
+        model_type = "vit_l"
+
+    if cuda and torch.cuda.is_available():
         device = "cuda"
 
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
