@@ -16,6 +16,7 @@
     "react-select": "^5.8.0",
     "react-spinners": "^0.13.8",
     "react-switch": "^7.0.0",
+    "use-image": "^1.1.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {

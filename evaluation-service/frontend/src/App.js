@@ -2,49 +2,80 @@
 import './App.css';
 import React, { useState, useEffect } from 'react';
 import { Stage, Layer, Image, Line, Text } from 'react-konva';
+import Konva from 'konva';
 import axios from 'axios';
 import Select from 'react-select';
 import Switch from "react-switch";
 import ClipLoader from "react-spinners/ClipLoader";
 import Modal from 'react-modal';
 
+var ColorReplaceFilter = function (imageData) {
+  console.log('Applying filter');
+  var nPixels = imageData.data.length;
+  for (var i = 0; i < nPixels; i += 4) {
+    const isWhite = imageData.data[i] === 255 && imageData.data[i + 1] === 255 && imageData.data[i + 2] === 255;
+    if (isWhite) {
+      imageData.data[i] = 0;     // Red
+      imageData.data[i + 1] = 255; // Green
+      imageData.data[i + 2] = 0;   // Blue
+    }
+  }
+};
+
 const App = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [showDepth, setShowDepth] = useState(false);
+  const [showMask, setShowMask] = useState(false);
   const [scene, setScene] = useState(null);
   const [image, setImage] = useState(null);
-  const [mask, setMask] = useState(null);
-  const [coordinates, setCoordinates] = useState([]);
+  const [maskImage, setMaskImage] = useState(null);
+  const [depthImage, setDepthImage] = useState(null);
   const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
   const [availableFiles, setAvailableFiles] = useState([]);
 
-  const [toggleState, setToggleState] = useState(false);
+  const [autoLoad, setAutoLoad] = useState(false);
 
-  const fetchSceneImageAndMaybeMask = async () => {
-    console.log('Scene changed:', scene);
-    if (!scene) return;
+  const maskImageRef = React.useRef();
+
+  // when image is loaded we need to cache the shape
+  React.useEffect(() => {
+    if (maskImage) {
+      // you many need to reapply cache on some props changes like shadow, stroke, etc.
+      maskImageRef.current?.cache();
+    }
+  }, [maskImage, showMask]);
+
+  const fetchSceneImageAndMaybeMask = async (currentScene) => {
+
+    setIsLoading(true);
 
     try {
-      setIsLoading(true);
-      if (scene.maskExists) {
-        const coordinates = await axios.get(`http://127.0.0.1:5000/api/coordinates/${scene.sceneName}`);
-        console.log('Coordinates:', coordinates.data.coordinates);
-        //setCoordinates(coordinates.data.coordinates);
-        const mask = new window.Image();
-        mask.src = ""
-        mask.src = `http://127.0.0.1:5000/scenes/${scene.sceneName}/mask?${Date.now()}`;
-        mask.onload = () => {
-          console.log('Mask loaded:', mask);
-          const maxWidth = window.innerWidth * 0.7;
-          const scale = maxWidth / mask.width;
-          setMask({ mask, scale });
+      const maxWidth = window.innerWidth * 0.8;
+
+      if (currentScene.maskExists) {
+        const maskImg = new window.Image();
+        maskImg.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/mask?${Date.now()}`;
+        maskImg.crossOrigin = 'Anonymous';
+        maskImg.onload = () => {
+          const scale = maxWidth / maskImg.width;
+          setMaskImage({ img: maskImg, scale });
         };
       }
+
       const img = new window.Image();
-      img.src = `http://127.0.0.1:5000/scenes/${scene.sceneName}/image`;
+      img.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/image`;
+      img.crossOrigin = 'Anonymous';
       img.onload = () => {
-        const maxWidth = window.innerWidth * 0.7;
         const scale = maxWidth / img.width;
         setImage({ img, scale });
+      };
+
+      const depthImg = new window.Image();
+      depthImg.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/depth`;
+      depthImg.crossOrigin = 'Anonymous';
+      depthImg.onload = () => {
+        const scale = maxWidth / depthImg.width;
+        setDepthImage({ img: depthImg, scale });
       };
       
     } catch (error) {
@@ -67,54 +98,53 @@ const App = () => {
     
   }
 
-  const handleToggle = () => {
-    setToggleState(!toggleState);
-  };
 
   const handleRefresh = async () => {
     fetchAvailableFiles();
-    fetchSceneImageAndMaybeMask();
+    if (scene) {
+      fetchSceneImageAndMaybeMask(scene);
+    }
   }
 
-  useEffect(() => {
-    let intervalId;
+  // useEffect(() => {
+  //   let intervalId;
 
-    const startInterval = async () => {
-      if (toggleState) {
-        intervalId = setInterval(async () => {
-          const availableFiles = await getAvailableFiles();
-          setAvailableFiles(availableFiles);
-          const sceneToSet = availableFiles.sort((a, b) => a.lastModifiedTime - b.lastModifiedTime).find(file => !file.maskExists);
-          console.log('Scene to set:', sceneToSet, 'Current scene:', scene);
-          if (sceneToSet && sceneToSet.sceneName !== scene.sceneName) {
-            console.log('Setting new scene:', sceneToSet);
-            setScene(sceneToSet);
-            setImage(null);
-            setMask(null);
-            // setCoordinates([]);
-          }
-        }, 3000);
-      }
-    }
+  //   const startInterval = async () => {
+  //     if (autoLoad) {
+  //       intervalId = setInterval(async () => {
+  //         const availableFiles = await getAvailableFiles();
+  //         setAvailableFiles(availableFiles);
+  //         const sceneToSet = availableFiles.sort((a, b) => a.lastModifiedTime - b.lastModifiedTime).find(file => !file.maskExists);
+  //         console.log('Scene to set:', sceneToSet, 'Current scene:', scene);
+  //         if (sceneToSet && sceneToSet.sceneName !== scene.sceneName) {
+  //           console.log('Setting new scene:', sceneToSet);
+  //           setScene(sceneToSet);
+  //           setImage(null);
+  //           setMask(null);
+  //           // setCoordinates([]);
+  //         }
+  //       }, 3000);
+  //     }
+  //   }
 
-    startInterval();
+  //   startInterval();
   
-    
-  
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId); 
-      }
-    };
-  }, [toggleState, scene])
+  //   return () => {
+  //     if (intervalId) {
+  //       clearInterval(intervalId); 
+  //     }
+  //   };
+  // }, [autoLoad, scene])
 
   useEffect(() => {
     fetchAvailableFiles();
   }, []);
 
   useEffect(() => {
-
-    fetchSceneImageAndMaybeMask();
+    if (scene) {
+      fetchSceneImageAndMaybeMask(scene);
+    }
+    
   }, [scene]);
 
   const getAvailableFiles = async () => {
@@ -128,10 +158,6 @@ const App = () => {
   };
 
   const handleChange = (selectedOption) => {
-    if (selectedOption === scene) return;
-    setImage(null);
-    setMask(null);
-    //setCoordinates([]);
     setScene(selectedOption.value);
   };
 
@@ -142,28 +168,18 @@ const App = () => {
 
 
   const handleImageClick = (event) => {
-    setIsLoading(true);
-    console.log('Image clicked:', event);
     const { layerX, layerY } = event.evt;
     console.log('layerX:', layerX, 'layerY:', layerY);
     axios.post('http://127.0.0.1:5000/api/annotate', { x: layerX / image.scale,  y: layerY / image.scale, sceneName: scene.sceneName})
       .then(response => {
-        console.log('Response:', response);
-        fetchSceneImageAndMaybeMask();
-        //setCoordinates(response.data.coordinates);
+        fetchSceneImageAndMaybeMask(scene);
       })
       .catch(error => {
         console.error('Error fetching coordinates:', error);
-      }).finally(() => {
-        console.log('Finally');
-        setIsLoading(false);
-      });
-    
+      })
   };
 
   const selectOptions = availableFiles.map(file => ({ value: file, label: file.sceneName }));
-
-  const scaledCoordinates = !!image ? coordinates.map(coord => coord * image.scale) : [];
 
   return (
   <>
@@ -190,37 +206,64 @@ const App = () => {
     >
         <ClipLoader color="#ffffff" loading={true} size={30} />
     </Modal>
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', width: '50%' }}>
+    
+    
+      <div style={{ display: 'flex', flexDirection: 'row'}}>
+      <img style={{height: 60, width: 100}} src={process.env.PUBLIC_URL + '/ICRA_2024.jpg'} alt="Logo" className="logo" />
+      
+      <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'space-between' }}>
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-      <Select
-          value={selectOptions.find(option => option.value.sceneName === scene?.sceneName)}
-          onChange={handleChange}
-          options={selectOptions}
-          placeholder="Select data"
-          styles={{
-            container: (provided, state) => ({
-              ...provided,
-              width: '200px',
-            }),
-          }}
-        />
+        <Select
+            value={selectOptions.find(option => option.value.sceneName === scene?.sceneName)}
+            onChange={handleChange}
+            options={selectOptions}
+            placeholder="Select data"
+            styles={{
+              container: (provided, state) => ({
+                ...provided,
+                width: '200px',
+              }),
+            }}
+          />
+
         <button className="refresh-button" onClick={handleRefresh}>Refresh</button>
-        </div>
+      </div>
+
       <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'center' }}>
-      <div style={{ marginRight: '10px', marginLeft: '10px' }}>
-        Auto check for unannotated data
-      </div>
         <Switch 
-          onChange={handleToggle} 
-          checked={toggleState} 
-        />
+            onChange={() => {
+              setShowMask(!showMask)
+            }} 
+            checked={showMask} 
+          />
+        <div className="switch-label">
+          Show Mask
+        </div>
+        <Switch 
+            onChange={() => setShowDepth(!showDepth)} 
+            checked={showDepth} 
+          />
+        <div className="switch-label">
+          Show Depth
+        </div>
+        
+        <Switch 
+            onChange={() => setAutoLoad(!autoLoad)} 
+            checked={autoLoad} 
+          />
+        <div className="switch-label">
+          Auto check for new data
+        </div>
       </div>
       </div>
+      
+      
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center'}}>
       {!!image && (<div style={{ marginTop: '20px', border: '1px solid #ccc', borderRadius: '5px', padding: '10px' }}>
         <Stage onMouseMove={handleMouseMove} width={image ? image.img.width * image.scale : 800} height={image ? image.img.height * image.scale : 600}>
           <Layer>
-            {image && (
+            {image && !showDepth && (
               <Image
                 image={image.img}
                 onClick={handleImageClick}
@@ -228,17 +271,26 @@ const App = () => {
                 scaleY={image.scale}
               />
             )}
-            {mask && (
+            {depthImage && showDepth && (
               <Image
-                image={mask.mask}
+                image={depthImage.img}
                 onClick={handleImageClick}
-                opacity={0.5}
-                scaleX={mask.scale}
-                scaleY={mask.scale}
+                scaleX={depthImage.scale}
+                scaleY={depthImage.scale}
               />
             )}
-            {/* <Polygon coordinates={scaledCoordinates} />
-            {image && <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />} */}
+            {maskImage && showMask && (
+              <Image
+                onClick={handleImageClick}
+                image={maskImage.img}
+                opacity={0.3}
+                scaleX={maskImage.scale}
+                scaleY={maskImage.scale}
+                filters={[ColorReplaceFilter]}
+                ref={maskImageRef}
+              />
+            )}
+            <HoverText x={hoverPosition.x} y={hoverPosition.y} scale={image.scale} />
           </Layer>
         </Stage>
       </div>)}
@@ -251,15 +303,7 @@ const HoverText = ({ x, y, scale }) => {
   return (
     <>
     <Text
-      text={`Hover: (${x.toFixed(2)}, ${y.toFixed(2)})`}
-      x={x - 150}
-      y={y - 10}
-      fontSize={12}
-      backgroundColor="white"
-      fill="green" // Set the fill color to red
-    />
-    <Text
-      text={`Scaled: (${(x/scale).toFixed(2)}, ${(y/scale).toFixed(2)})`}
+      text={`Pixel: (${(x/scale).toFixed(2)}, ${(y/scale).toFixed(2)})`}
       x={x - 150}
       y={y - 30}
       fontSize={12}
@@ -270,19 +314,5 @@ const HoverText = ({ x, y, scale }) => {
   );
 };
 
-const Polygon = ({ coordinates }) => {
-  if (coordinates.length < 3) return null;
-
-  return (
-      <Line
-        points={coordinates}
-        closed
-        stroke="green"
-        strokeWidth={2}
-        fill="rgba(255, 0, 0, 0.5)" // Red color with 50% opacity
-        opacity={0.5} // Additional opacity setting to ensure transparency
-      />
-  );
-};
 
 export default App;

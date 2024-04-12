@@ -24,6 +24,12 @@ def create_app(scenes_directory, predictor):
         image_path = f"{scenes_directory}/{scene_name}/observation_result/image_left.png"
         return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
     
+    @app.route("/scenes/<scene_name>/depth")
+    def get_depth(scene_name):
+        # Construct the image path using the provided directory
+        image_path = f"{scenes_directory}/{scene_name}/observation_result/depth_image.jpg"
+        return send_file(image_path, mimetype="image/jpeg")  # Adjust mimetype as per your image type
+    
     # Define a route to serve images
     @app.route("/scenes/<scene_name>/mask")
     def get_mask(scene_name):
@@ -49,16 +55,6 @@ def create_app(scenes_directory, predictor):
 
         return jsonify({"scenes": scenes_info})
     
-    @app.route("/api/coordinates/<scene_name>", methods=["GET"])
-    def get_mask_coordinates(scene_name):
-
-        mask = cv2.imread(f"{scenes_directory}/{scene_name}/observation_result/mask.png")
-
-        coords = np.where(mask > 0)
-        combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
-
-        return jsonify({"coordinates": combined_coords.tolist()})
-
     @app.route("/api/annotate", methods=["POST"])
     def annotate():
         data = request.get_json()
@@ -81,12 +77,12 @@ def create_app(scenes_directory, predictor):
 
 
         coords = np.where(masks[0])
-        combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
+        # combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
 
         cv2.imwrite(f"{scenes_directory}/{scene_name}/observation_result/mask.png", (masks[0] * 255).astype(np.uint8))
 
         # Return the new coordinates as a response
-        return jsonify({"coordinates": combined_coords.tolist()})
+        return jsonify({})
 
     return app
 
