@@ -2,9 +2,10 @@ import numpy as np
 import cv2
 
 
-def calculate_pixel_areas_for_image(image_path, fx, fy, cx, cy):
+def calculate_pixel_areas_for_image(depth_image_path, mask_image_path, fx, fy, cx, cy):
     # Load the depth map from the image
-    depth_map = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    depth_map = cv2.imread(depth_image_path, cv2.IMREAD_GRAYSCALE)
+    mask = cv2.imread(mask_image_path, cv2.IMREAD_UNCHANGED)
 
     # Get the pixel coordinates
     x, y = np.meshgrid(np.arange(depth_map.shape[1]), np.arange(depth_map.shape[0]))
@@ -18,10 +19,14 @@ def calculate_pixel_areas_for_image(image_path, fx, fy, cx, cy):
     # Calculate the area of each pixel
     pixel_areas = np.abs((X2 - X1) * (Y2 - Y1))
 
-    # Normalize the pixel areas to the range 0-255
-    pixel_areas_normalized = cv2.normalize(pixel_areas, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    pixel_areas_masked = np.where(mask > 0, pixel_areas, 0)
 
-    # Display the normalized pixel areas
+    
+
+    # Normalize the pixel areas to the range 0-255
+    pixel_areas_normalized = cv2.normalize(pixel_areas_masked, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
+    # # Display the normalized pixel areas
     cv2.imshow('Pixel Areas', pixel_areas_normalized)
 
     # Wait for a key press and close the window
@@ -32,7 +37,7 @@ def calculate_pixel_areas_for_image(image_path, fx, fy, cx, cy):
 
 
 if __name__ == "__main__":
-    image_path = "/home/jh/dev/cloth-competition/datasets/sample_000001/observation_result/depth_image.jpg"
+
 
 
     
@@ -54,4 +59,4 @@ if __name__ == "__main__":
     cx = 1104.63525390625
     cy = 621.6848754882812
 
-    calculate_pixel_areas_for_image(image_path, fx, fy, cx, cy)
+    calculate_pixel_areas_for_image(depth_image_path, mask_image_path, fx, fy, cx, cy)
