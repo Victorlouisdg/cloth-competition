@@ -12,13 +12,13 @@ import Modal from "react-modal";
 const customStyles = {
   option: (provided, state) => ({
     ...provided,
-    color: 'black',
-    backgroundColor: state.isSelected ? 'lightGrey' : 'white',
+    color: "black",
+    backgroundColor: state.isSelected ? "lightGrey" : "white",
   }),
   control: (provided) => ({
     ...provided,
-    backgroundColor: 'white',
-    color: 'black',
+    backgroundColor: "white",
+    color: "black",
   }),
 };
 
@@ -40,6 +40,7 @@ var ColorReplaceFilter = function (imageData) {
 
 const App = () => {
   const [isLoading, setIsLoading] = useState(false);
+  const [annotationIsLoading, setAnnotationIsLoading] = useState(false);
   const [showDepth, setShowDepth] = useState(false);
   const [showMask, setShowMask] = useState(false);
   const [scene, setScene] = useState(null);
@@ -48,6 +49,7 @@ const App = () => {
   const [depthImage, setDepthImage] = useState(null);
   const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
   const [availableFiles, setAvailableFiles] = useState([]);
+  const [sceneStats, setSceneStats] = useState(null);
 
   const [autoLoad, setAutoLoad] = useState(false);
 
@@ -61,51 +63,51 @@ const App = () => {
     }
   }, [maskImage, showMask]);
 
-  const fetchSceneImageAndMaybeMask = async (currentScene) => {
-    setIsLoading(true);
+  const fetchSceneImageAndMaybeMask = (currentScene) => {
+    const maxWidth = window.innerWidth * 0.8;
 
-    try {
-      const maxWidth = window.innerWidth * 0.8;
-
-      if (currentScene.maskExists) {
-        const maskImg = new window.Image();
-        maskImg.src = `http://127.0.0.1:5000/scenes/${
-          currentScene.sceneName
-        }/mask?${Date.now()}`;
-        maskImg.crossOrigin = "Anonymous";
-        maskImg.onload = () => {
-          const scale = maxWidth / maskImg.width;
-          setMaskImage({ img: maskImg, scale });
-        };
-      }
-
-      const img = new window.Image();
-      img.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/image`;
-      img.crossOrigin = "Anonymous";
-      img.onload = () => {
-        const scale = maxWidth / img.width;
-        setImage({ img, scale });
+    if (currentScene.maskExists) {
+      const maskImg = new window.Image();
+      maskImg.src = `http://127.0.0.1:5000/scenes/${
+        currentScene.sceneName
+      }/mask?${Date.now()}`;
+      maskImg.crossOrigin = "Anonymous";
+      maskImg.onload = () => {
+        const scale = maxWidth / maskImg.width;
+        setMaskImage({ img: maskImg, scale });
       };
-
-      const depthImg = new window.Image();
-      depthImg.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/depth`;
-      depthImg.crossOrigin = "Anonymous";
-      depthImg.onload = () => {
-        const scale = maxWidth / depthImg.width;
-        setDepthImage({ img: depthImg, scale });
-      };
-    } catch (error) {
-      console.error("Error fetching scene image:", error);
-    } finally {
-      setIsLoading(false);
+      axios
+        .get(`http://127.0.0.1:5000/scenes/${currentScene.sceneName}/coverage`)
+        .then((response) => {
+          setSceneStats(response.data);
+        })
+        .catch((error) => {
+          console.error("Error fetching coverage:", error);
+        });
     }
+
+    const img = new window.Image();
+    img.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/image`;
+    img.crossOrigin = "Anonymous";
+    img.onload = () => {
+      const scale = maxWidth / img.width;
+      setImage({ img, scale });
+    };
+
+    const depthImg = new window.Image();
+    depthImg.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/depth`;
+    depthImg.crossOrigin = "Anonymous";
+    depthImg.onload = () => {
+      const scale = maxWidth / depthImg.width;
+      setDepthImage({ img: depthImg, scale });
+    };
   };
 
   const fetchAvailableFiles = async () => {
     setIsLoading(true);
     try {
-      const initialAvailableFiles = await getAvailableFiles();
-      setAvailableFiles(initialAvailableFiles);
+      const availableFiles = await getAvailableFiles();
+      setAvailableFiles(availableFiles);
     } catch (error) {
       console.error("Error fetching available files:", error);
     } finally {
@@ -151,6 +153,17 @@ const App = () => {
   // }, [autoLoad, scene])
 
   useEffect(() => {
+    if (!scene && availableFiles.length > 0) {
+      const sceneToSet = availableFiles.sort(
+        (a, b) => a.lastModifiedTime - b.lastModifiedTime
+      )[0];
+      if (sceneToSet) {
+        setScene(sceneToSet);
+      }
+    }
+  }, [availableFiles, scene]);
+
+  useEffect(() => {
     fetchAvailableFiles();
   }, []);
 
@@ -182,6 +195,7 @@ const App = () => {
   const handleImageClick = (event) => {
     const { layerX, layerY } = event.evt;
     console.log("layerX:", layerX, "layerY:", layerY);
+    setAnnotationIsLoading(true);
     axios
       .post("http://127.0.0.1:5000/api/annotate", {
         x: layerX / image.scale,
@@ -189,10 +203,14 @@ const App = () => {
         sceneName: scene.sceneName,
       })
       .then((response) => {
+        fetchAvailableFiles();
         fetchSceneImageAndMaybeMask(scene);
       })
       .catch((error) => {
         console.error("Error fetching coordinates:", error);
+      })
+      .finally(() => {
+        setAnnotationIsLoading(false);
       });
   };
 
@@ -228,11 +246,7 @@ const App = () => {
       </Modal>
 
       <div className="flex items-center justify-between p-4 bg-gray-800 text-white font-sans">
-        <img
-          className="h-16 w-24"
-          src={process.env.PUBLIC_URL + "/ICRA_2024.jpg"}
-          alt="Logo"
-        />
+        <h1 className="text-4xl font-bold">👕 </h1>
 
         <div className="flex items-center justify-between space-x-4">
           <div className="flex items-center space-x-4">
@@ -276,22 +290,10 @@ const App = () => {
           </div>
         </div>
       </div>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
-      >
-        {!!image && (
-          <div
-            style={{
-              marginTop: "20px",
-              border: "1px solid #ccc",
-              borderRadius: "5px",
-              padding: "10px",
-            }}
-          >
+
+      {!!image && (
+        <div className="flex flex-row items-start">
+          <div className="flex">
             <Stage
               onMouseMove={handleMouseMove}
               width={image ? image.img.width * image.scale : 800}
@@ -333,8 +335,30 @@ const App = () => {
               </Layer>
             </Stage>
           </div>
-        )}
-      </div>
+          <div className="ml-5 mt-5">
+            <div className="mb-1">
+              <span className="font-bold">Scene: </span>
+              <span>{scene.sceneName}</span>
+            </div>
+
+            {annotationIsLoading ? (
+              <div className="mt-3 flex items-center space-x-2">
+                <ClipLoader loading={true} size={30} />
+                <p className="text-sm font-bold text-blue-600">
+                  Manual annotation in progress...
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mb-1">
+                  <span className="font-bold">Coverage: </span>
+                  <span>{sceneStats?.coverage?.toFixed(3)} m2</span>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </>
   );
 };
@@ -348,7 +372,6 @@ const HoverText = ({ x, y, scale }) => {
         y={y - 30}
         fontSize={12}
         backgroundColor="white"
-        fill="green" // Set the fill color to red
       />
     </>
   );

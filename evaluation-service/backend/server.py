@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 import torch
 from segment_anything import SamPredictor, sam_model_registry
+import json
 
 app = Flask(__name__)
 CORS(app)  #
@@ -36,6 +37,16 @@ def create_app(scenes_directory, predictor):
         # Construct the image path using the provided directory
         image_path = f"{scenes_directory}/{scene_name}/observation_result/mask.png"
         return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
+    
+    # Define a route to serve images
+    @app.route("/scenes/<scene_name>/coverage")
+    def get_coverage(scene_name):
+        # Construct the image path using the provided directory
+        
+        coverage = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/coverage.json"))
+
+
+        return jsonify(coverage)
 
     @app.route("/api/scenes", methods=["GET"])
     def get_scenes():
@@ -75,11 +86,43 @@ def create_app(scenes_directory, predictor):
             multimask_output=False,
         )
 
+        mask = masks[0]
+        mask_image_path = f"{scenes_directory}/{scene_name}/observation_result/mask.png"
 
-        coords = np.where(masks[0])
-        # combined_coords = np.vstack((coords[1], coords[0])).T.reshape(-1)
 
-        cv2.imwrite(f"{scenes_directory}/{scene_name}/observation_result/mask.png", (masks[0] * 255).astype(np.uint8))
+        cv2.imwrite(mask_image_path, (mask * 255).astype(np.uint8))
+
+        depth_map_path = f"{scenes_directory}/{scene_name}/observation_result/depth_map.tiff"
+        depth_map = cv2.imread(depth_map_path, cv2.IMREAD_UNCHANGED)
+
+        masked_depth_map = np.where(mask > 0, depth_map, 0)
+        masked_values = masked_depth_map[mask > 0]
+
+        mean = np.mean(masked_values)
+
+        lower_bound = mean - 0.5
+        upper_bound = mean + 0.5
+
+        masked_depth_map = np.where((masked_depth_map > lower_bound) & (masked_depth_map < upper_bound), masked_depth_map, 0)
+
+        x, y = np.meshgrid(np.arange(masked_depth_map.shape[1]), np.arange(masked_depth_map.shape[0]))
+
+        intrinsics = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/camera_intrinsics.json"))
+
+        cx = intrinsics["principal_point_in_pixels"]["cx"]
+        cy = intrinsics["principal_point_in_pixels"]["cy"]
+
+        fx = intrinsics["focal_lengths_in_pixels"]["fx"]
+        fy = intrinsics["focal_lengths_in_pixels"]["fy"]
+
+        X1 = (x - 0.5 - cx) * masked_depth_map/ fx
+        Y1 = (y - 0.5 - cy) * masked_depth_map / fy
+        X2 = (x + 0.5 - cx) * masked_depth_map / fx
+        Y2 = (y + 0.5 - cy) * masked_depth_map / fy
+
+        pixel_areas = np.abs((X2 - X1) * (Y2 - Y1))
+
+        json.dump({"coverage": np.sum(pixel_areas)}, open(f"{scenes_directory}/{scene_name}/observation_result/coverage.json", "w"))
 
         # Return the new coordinates as a response
         return jsonify({})
