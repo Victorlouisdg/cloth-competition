@@ -5,7 +5,8 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        'sans': ['Lato', 'sans-serif'],
+        'sans': ['Dm Sans', 'sans-serif'],
+        'roboto': ['Roboto', 'sans-serif']
       },
       colors: {
         'dropdown-color': '#333333', // replace with the color you want

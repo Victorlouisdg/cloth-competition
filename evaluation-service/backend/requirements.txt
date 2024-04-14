@@ -8,4 +8,5 @@ onnxruntime
 onnx
 flask
 Flask-Cors
+scipy
 ../submodules/segment-anything

@@ -1,13 +1,13 @@
 // App.js
 import "./App.css";
-import React, { useState, useEffect } from "react";
-import { Stage, Layer, Image, Line, Text } from "react-konva";
-import Konva from "konva";
+import React, { useState, useEffect, useRef } from "react";
+import { Stage, Layer, Image, Text, Rect } from "react-konva";
 import axios from "axios";
 import Select from "react-select";
 import Switch from "react-switch";
 import ClipLoader from "react-spinners/ClipLoader";
 import Modal from "react-modal";
+import _ from "lodash";
 
 const customStyles = {
   option: (provided, state) => ({
@@ -22,8 +22,7 @@ const customStyles = {
   }),
 };
 
-var ColorReplaceFilter = function (imageData) {
-  console.log("Applying filter");
+var colorReplaceFilter = function (imageData) {
   var nPixels = imageData.data.length;
   for (var i = 0; i < nPixels; i += 4) {
     const isWhite =
@@ -39,55 +38,51 @@ var ColorReplaceFilter = function (imageData) {
 };
 
 const App = () => {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [annotationIsLoading, setAnnotationIsLoading] = useState(false);
+
   const [showDepth, setShowDepth] = useState(false);
   const [showMask, setShowMask] = useState(false);
-  const [scene, setScene] = useState(null);
+  const [autoLoad, setAutoLoad] = useState(false);
+
+  const [currentScene, setCurrentScene] = useState(null);
   const [image, setImage] = useState(null);
   const [maskImage, setMaskImage] = useState(null);
   const [depthImage, setDepthImage] = useState(null);
-  const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
-  const [availableFiles, setAvailableFiles] = useState([]);
-  const [sceneStats, setSceneStats] = useState(null);
 
-  const [autoLoad, setAutoLoad] = useState(false);
+  const [availableScenes, setAvailableScenes] = useState([]);
+
+  const [rect, setRect] = useState(null);
+  const [drawing, setDrawing] = useState(false);
+  const [outlierThreshold, setOutlierThreshold] = useState(null);
 
   const maskImageRef = React.useRef();
 
-  // when image is loaded we need to cache the shape
   React.useEffect(() => {
     if (maskImage) {
-      // you many need to reapply cache on some props changes like shadow, stroke, etc.
       maskImageRef.current?.cache();
     }
   }, [maskImage, showMask]);
 
-  const fetchSceneImageAndMaybeMask = (currentScene) => {
+  const updateImageSources = (sceneName) => {
     const maxWidth = window.innerWidth * 0.8;
 
-    if (currentScene.maskExists) {
+    console.log("Fetching images for scene:", sceneName);
+
+    try {
       const maskImg = new window.Image();
-      maskImg.src = `http://127.0.0.1:5000/scenes/${
-        currentScene.sceneName
-      }/mask?${Date.now()}`;
+      maskImg.src = `http://127.0.0.1:5000/scenes/${sceneName}/mask?${Date.now()}`;
       maskImg.crossOrigin = "Anonymous";
       maskImg.onload = () => {
         const scale = maxWidth / maskImg.width;
         setMaskImage({ img: maskImg, scale });
       };
-      axios
-        .get(`http://127.0.0.1:5000/scenes/${currentScene.sceneName}/coverage`)
-        .then((response) => {
-          setSceneStats(response.data);
-        })
-        .catch((error) => {
-          console.error("Error fetching coverage:", error);
-        });
+    } catch (error) {
+      console.error("Error fetching mask image:", error);
     }
 
     const img = new window.Image();
-    img.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/image`;
+    img.src = `http://127.0.0.1:5000/scenes/${sceneName}/image`;
     img.crossOrigin = "Anonymous";
     img.onload = () => {
       const scale = maxWidth / img.width;
@@ -95,7 +90,7 @@ const App = () => {
     };
 
     const depthImg = new window.Image();
-    depthImg.src = `http://127.0.0.1:5000/scenes/${currentScene.sceneName}/depth`;
+    depthImg.src = `http://127.0.0.1:5000/scenes/${sceneName}/depth`;
     depthImg.crossOrigin = "Anonymous";
     depthImg.onload = () => {
       const scale = maxWidth / depthImg.width;
@@ -103,77 +98,75 @@ const App = () => {
     };
   };
 
-  const fetchAvailableFiles = async () => {
-    setIsLoading(true);
+  const updateAvailableScenes = async () => {
     try {
-      const availableFiles = await getAvailableFiles();
-      setAvailableFiles(availableFiles);
+      const availableScenes = await getAvailableScenes();
+      setAvailableScenes(availableScenes);
     } catch (error) {
       console.error("Error fetching available files:", error);
     } finally {
-      setIsLoading(false);
+      if (isLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   const handleRefresh = async () => {
-    fetchAvailableFiles();
-    if (scene) {
-      fetchSceneImageAndMaybeMask(scene);
-    }
+    updateAvailableScenes();
   };
 
-  // useEffect(() => {
-  //   let intervalId;
-
-  //   const startInterval = async () => {
-  //     if (autoLoad) {
-  //       intervalId = setInterval(async () => {
-  //         const availableFiles = await getAvailableFiles();
-  //         setAvailableFiles(availableFiles);
-  //         const sceneToSet = availableFiles.sort((a, b) => a.lastModifiedTime - b.lastModifiedTime).find(file => !file.maskExists);
-  //         console.log('Scene to set:', sceneToSet, 'Current scene:', scene);
-  //         if (sceneToSet && sceneToSet.sceneName !== scene.sceneName) {
-  //           console.log('Setting new scene:', sceneToSet);
-  //           setScene(sceneToSet);
-  //           setImage(null);
-  //           setMask(null);
-  //           // setCoordinates([]);
-  //         }
-  //       }, 3000);
-  //     }
-  //   }
-
-  //   startInterval();
-
-  //   return () => {
-  //     if (intervalId) {
-  //       clearInterval(intervalId);
-  //     }
-  //   };
-  // }, [autoLoad, scene])
+  const handleOutlierThresholdChange = (event) => {
+    const outlierThreshold = event.target.value;
+    setOutlierThreshold(outlierThreshold);
+  };
 
   useEffect(() => {
-    if (!scene && availableFiles.length > 0) {
-      const sceneToSet = availableFiles.sort(
-        (a, b) => a.lastModifiedTime - b.lastModifiedTime
-      )[0];
-      if (sceneToSet) {
-        setScene(sceneToSet);
+    let intervalId;
+
+    const startInterval = async () => {
+      intervalId = setInterval(async () => {
+        updateAvailableScenes();
+      }, 3000);
+    };
+
+    startInterval();
+
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
       }
-    }
-  }, [availableFiles, scene]);
-
-  useEffect(() => {
-    fetchAvailableFiles();
+    };
   }, []);
 
   useEffect(() => {
-    if (scene) {
-      fetchSceneImageAndMaybeMask(scene);
-    }
-  }, [scene]);
+    console.log("Available scenes:", availableScenes);
+    const sortedScenes = availableScenes.sort(
+      (a, b) => new Date(b.lastModifiedTime) - new Date(a.lastModifiedTime)
+    );
 
-  const getAvailableFiles = async () => {
+    if (sortedScenes.length > 0) {
+      const sceneToSet = sortedScenes[0];
+      if (!currentScene || (autoLoad && sceneToSet.sceneName !== currentScene.sceneName)) {
+        setCurrentScene(sceneToSet);
+        setMaskImage(null);
+        updateImageSources(sceneToSet.sceneName);
+        return;
+      }
+
+      const updatedScene = availableScenes.find(
+        (scene) => scene.sceneName === currentScene.sceneName
+      );
+
+      if (!_.isEqual(updatedScene, currentScene)) {
+        console.log("Scene not eq", updatedScene, currentScene);
+        setCurrentScene(updatedScene);
+        setMaskImage(null);
+        updateImageSources(updatedScene.sceneName);
+      }
+    }
+  }, [availableScenes, currentScene, autoLoad]);
+
+  const getAvailableScenes = async () => {
     try {
       const response = await axios.get("http://127.0.0.1:5000/api/scenes");
       return response.data.scenes;
@@ -184,27 +177,46 @@ const App = () => {
   };
 
   const handleChange = (selectedOption) => {
-    setScene(selectedOption.value);
+    setCurrentScene(selectedOption.value);
+    setMaskImage(null);
+    updateImageSources(selectedOption.value.sceneName);
+    
   };
 
-  const handleMouseMove = (event) => {
-    const { layerX, layerY } = event.evt;
-    setHoverPosition({ x: layerX, y: layerY });
+  const handleMouseDown = (e) => {
+    setDrawing(true);
+    const pos = e.target.getStage().getPointerPosition();
+    setRect({ x: pos.x, y: pos.y, width: 10, height: 10 });
   };
 
-  const handleImageClick = (event) => {
-    const { layerX, layerY } = event.evt;
-    console.log("layerX:", layerX, "layerY:", layerY);
+  const handleMouseMove = (e) => {
+    if (!drawing) return;
+    const pos = e.target.getStage().getPointerPosition();
+    setRect((rect) => ({
+      ...rect,
+      width: pos.x - rect.x,
+      height: pos.y - rect.y,
+    }));
+  };
+
+  const handleMouseUp = () => {
+    setDrawing(false);
+  };
+
+  const annotate = (event) => {
     setAnnotationIsLoading(true);
+    const { x, y, width, height } = rect;
     axios
       .post("http://127.0.0.1:5000/api/annotate", {
-        x: layerX / image.scale,
-        y: layerY / image.scale,
-        sceneName: scene.sceneName,
+        x1: x / image.scale,
+        y1: y / image.scale,
+        x2: (x + width) / image.scale,
+        y2: (y + height) / image.scale,
+        outlierThreshold: outlierThreshold ?? currentResult?.outlierThreshold,
+        sceneName: currentScene?.sceneName,
       })
       .then((response) => {
-        fetchAvailableFiles();
-        fetchSceneImageAndMaybeMask(scene);
+        updateAvailableScenes();
       })
       .catch((error) => {
         console.error("Error fetching coordinates:", error);
@@ -214,10 +226,24 @@ const App = () => {
       });
   };
 
-  const selectOptions = availableFiles.map((file) => ({
-    value: file,
-    label: file.sceneName,
+  const currentResult = currentScene?.result;
+  const scale = image?.scale;
+
+  const selectOptions = availableScenes.map((scene) => ({
+    value: scene,
+    label: scene.sceneName,
   }));
+
+  const uiRect = !!rect
+    ? rect
+    : !!currentResult && !!scale
+    ? {
+        x: currentResult.x1 * scale,
+        y: currentResult.y1 * scale,
+        width: (currentResult.x2 - currentResult.x1) * scale,
+        height: (currentResult.y2 - currentResult.y1) * scale,
+      }
+    : null;
 
   return (
     <>
@@ -246,17 +272,17 @@ const App = () => {
       </Modal>
 
       <div className="flex items-center justify-between p-4 bg-gray-800 text-white font-sans">
-        <h1 className="text-4xl font-bold">👕 </h1>
+        <h1 className="text-4xl font-bold">👕👔🥼🦺👖🧣🧤🧥🧦👗👘</h1>
 
         <div className="flex items-center justify-between space-x-4">
           <div className="flex items-center space-x-4">
             <Select
               value={selectOptions.find(
-                (option) => option.value.sceneName === scene?.sceneName
+                (option) => option.value.sceneName === currentScene?.sceneName
               )}
               onChange={handleChange}
               options={selectOptions}
-              placeholder="Select data"
+              placeholder="Select scene"
               styles={customStyles}
             />
 
@@ -286,93 +312,114 @@ const App = () => {
               onChange={() => setAutoLoad(!autoLoad)}
               checked={autoLoad}
             />
-            <div>Auto check for new data</div>
+            <div>Auto select newest scene</div>
           </div>
         </div>
       </div>
 
       {!!image && (
-        <div className="flex flex-row items-start">
-          <div className="flex">
-            <Stage
-              onMouseMove={handleMouseMove}
-              width={image ? image.img.width * image.scale : 800}
-              height={image ? image.img.height * image.scale : 600}
-            >
-              <Layer>
-                {image && !showDepth && (
-                  <Image
-                    image={image.img}
-                    onClick={handleImageClick}
-                    scaleX={image.scale}
-                    scaleY={image.scale}
-                  />
-                )}
-                {depthImage && showDepth && (
-                  <Image
-                    image={depthImage.img}
-                    onClick={handleImageClick}
-                    scaleX={depthImage.scale}
-                    scaleY={depthImage.scale}
-                  />
-                )}
-                {maskImage && showMask && (
-                  <Image
-                    onClick={handleImageClick}
-                    image={maskImage.img}
-                    opacity={0.3}
-                    scaleX={maskImage.scale}
-                    scaleY={maskImage.scale}
-                    filters={[ColorReplaceFilter]}
-                    ref={maskImageRef}
-                  />
-                )}
-                <HoverText
-                  x={hoverPosition.x}
-                  y={hoverPosition.y}
-                  scale={image.scale}
-                />
-              </Layer>
-            </Stage>
-          </div>
+        <div className="flex justify-between">
           <div className="ml-5 mt-5">
             <div className="mb-1">
               <span className="font-bold">Scene: </span>
-              <span>{scene.sceneName}</span>
+              <span>{currentScene?.sceneName}</span>
             </div>
 
             {annotationIsLoading ? (
               <div className="mt-3 flex items-center space-x-2">
                 <ClipLoader loading={true} size={30} />
                 <p className="text-sm font-bold text-blue-600">
-                  Manual annotation in progress...
+                  Manual segmentation in progress
                 </p>
               </div>
             ) : (
               <>
                 <div className="mb-1">
                   <span className="font-bold">Coverage: </span>
-                  <span>{sceneStats?.coverage?.toFixed(3)} m2</span>
+                  <span>{currentResult?.coverage?.toFixed(3)} m2</span>
                 </div>
               </>
             )}
+            <div className="flex flex-col items-start mt-4">
+              <div className="flex items-end mb-2">
+                <button
+                  disabled={!rect}
+                  onClick={annotate}
+                  className={`font-bold py-2 px-4 rounded ${
+                    rect
+                      ? "bg-blue-500 hover:bg-blue-700 text-white"
+                      : "bg-gray-500 text-gray-200 cursor-not-allowed"
+                  }`}
+                  title={
+                    rect
+                      ? ""
+                      : "Draw a new rectangle to create a new segmentation"
+                  }
+                >
+                  Get New Segmentation
+                </button>
+                <div className="ml-4">
+                  <label
+                    htmlFor="outlierThreshold"
+                    className="block text-sm font-bold mb-1"
+                  >
+                    Depth Outlier Threshold (m2):
+                  </label>
+                  <input
+                    type="number"
+                    id="outlierThreshold"
+                    name="outlierThreshold"
+                    value={outlierThreshold ?? currentResult?.outlierThreshold ?? 0.1}
+                    onChange={handleOutlierThresholdChange}
+                    className="shadow appearance-none border rounded w-24 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  />
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">
+                Hold mouse down while dragging to draw a rectangle.
+              </p>
+            </div>
           </div>
+          <Stage
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            width={image ? image.img.width * image.scale : 800}
+            height={image ? image.img.height * image.scale : 600}
+          >
+            <Layer>
+              {image && !showDepth && (
+                <Image
+                  image={image.img}
+                  // onClick={handleImageClick}
+                  scaleX={image.scale}
+                  scaleY={image.scale}
+                />
+              )}
+              {depthImage && showDepth && (
+                <Image
+                  image={depthImage.img}
+                  // onClick={handleImageClick}
+                  scaleX={depthImage.scale}
+                  scaleY={depthImage.scale}
+                />
+              )}
+              {maskImage && showMask && (
+                <Image
+                  // onClick={handleImageClick}
+                  image={maskImage.img}
+                  opacity={0.3}
+                  scaleX={maskImage.scale}
+                  scaleY={maskImage.scale}
+                  filters={[colorReplaceFilter]}
+                  ref={maskImageRef}
+                />
+              )}
+              <Rect {...uiRect} stroke="#007BFF" strokeWidth={4} />
+            </Layer>
+          </Stage>
         </div>
       )}
-    </>
-  );
-};
-
-const HoverText = ({ x, y, scale }) => {
-  return (
-    <>
-      <Text
-        text={`Pixel: (${(x / scale).toFixed(2)}, ${(y / scale).toFixed(2)})`}
-        x={x - 150}
-        y={y - 30}
-        fontSize={12}
-        backgroundColor="white"
-      />
     </>
   );
 };
