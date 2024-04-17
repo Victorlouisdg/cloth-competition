@@ -3,44 +3,37 @@ import sys
 
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
+from loguru import logger
 
 sys.path.append("..")
+import datetime
+import glob
+import json
 import os
-import time
+
 import cv2
 import numpy as np
 import torch
 from segment_anything import SamPredictor, sam_model_registry
-import json
-import glob
-import datetime
-from scipy.spatial.transform import Rotation as R
-import itertools
 
 app = Flask(__name__)
 CORS(app)  #
 
 from multiprocessing import Process, Queue
 
-import numpy as np
 
 def euler_to_mat(roll, pitch, yaw):
     # Create rotation matrix from Euler angles
-    R_x = np.array([[1, 0, 0],
-                    [0, np.cos(roll), -np.sin(roll)],
-                    [0, np.sin(roll), np.cos(roll)]])
+    R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
 
-    R_y = np.array([[np.cos(pitch), 0, np.sin(pitch)],
-                    [0, 1, 0],
-                    [-np.sin(pitch), 0, np.cos(pitch)]])
+    R_y = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
 
-    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0],
-                    [np.sin(yaw), np.cos(yaw), 0],
-                    [0, 0, 1]])
+    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
 
     R = np.dot(R_z, np.dot(R_y, R_x))
 
     return R
+
 
 def sam_worker(q, ack, args):
 
@@ -60,7 +53,10 @@ def sam_worker(q, ack, args):
         model_type = "vit_l"
 
     if cuda and torch.cuda.is_available():
+        logger.success("Segment-Anything worker running on GPU")
         device = "cuda"
+    else:
+        logger.warning("Segment-Anything worker running on CPU")
 
     sam = sam_model_registry[model_type](checkpoint=sam_checkpoint)
     sam.to(device=device)
@@ -76,7 +72,7 @@ def sam_worker(q, ack, args):
         y1 = data["y1"]
         x2 = data["x2"]
         y2 = data["y2"]
-        
+
         if "outlierThreshold" in data and data["outlierThreshold"] is not None:
             outlier_threshold = float(data["outlierThreshold"])
         else:
@@ -90,7 +86,6 @@ def sam_worker(q, ack, args):
         predictor.set_image(image)
 
         input_box = np.array([[x1, y1, x2, y2]])
-
 
         masks, _, _ = predictor.predict(
             point_coords=None,
@@ -112,7 +107,9 @@ def sam_worker(q, ack, args):
         lower_bound = mean - outlier_threshold
         upper_bound = mean + outlier_threshold
 
-        masked_depth_map = np.where((masked_depth_map > lower_bound) & (masked_depth_map < upper_bound), masked_depth_map, 0)
+        masked_depth_map = np.where(
+            (masked_depth_map > lower_bound) & (masked_depth_map < upper_bound), masked_depth_map, 0
+        )
 
         x, y = np.meshgrid(np.arange(masked_depth_map.shape[1]), np.arange(masked_depth_map.shape[0]))
 
@@ -124,7 +121,7 @@ def sam_worker(q, ack, args):
         fx = intrinsics["focal_lengths_in_pixels"]["fx"]
         fy = intrinsics["focal_lengths_in_pixels"]["fy"]
 
-        X1 = (x - 0.5 - cx) * masked_depth_map/ fx
+        X1 = (x - 0.5 - cx) * masked_depth_map / fx
         Y1 = (y - 0.5 - cy) * masked_depth_map / fy
         X2 = (x + 0.5 - cx) * masked_depth_map / fx
         Y2 = (y + 0.5 - cy) * masked_depth_map / fy
@@ -133,22 +130,23 @@ def sam_worker(q, ack, args):
 
         mask_image_path = f"{scenes_directory}/{scene_name}/observation_result/mask.png"
 
-
         cv2.imwrite(mask_image_path, ((pixel_areas > 0) * 255).astype(np.uint8))
 
-        json.dump({
-            "x1": x1,
-            "y1": y1,
-            "x2": x2,
-            "y2": y2,
-            "outlierThreshold": outlier_threshold,
-            "coverage": np.sum(pixel_areas),
+        json.dump(
+            {
+                "x1": x1,
+                "y1": y1,
+                "x2": x2,
+                "y2": y2,
+                "outlierThreshold": outlier_threshold,
+                "coverage": np.sum(pixel_areas),
             },
-            open(f"{scenes_directory}/{scene_name}/observation_result/result.json", "w"))
-        
+            open(f"{scenes_directory}/{scene_name}/observation_result/result.json", "w"),
+        )
+
         print("Data processed")
         ack.put(scene_name)
-        
+
 
 def get_last_modified_time(directory):
     files = glob.glob(directory + "/**", recursive=True)
@@ -160,20 +158,20 @@ def get_last_modified_time(directory):
     return dt_object.isoformat()
 
 
-def create_app(scenes_directory, q, ack, queued_scenes):
+def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     # Define a route to serve images
     @app.route("/scenes/<scene_name>/image")
     def get_image(scene_name):
         # Construct the image path using the provided directory
         image_path = f"{scenes_directory}/{scene_name}/observation_result/image_left.png"
         return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
-    
+
     @app.route("/scenes/<scene_name>/depth")
     def get_depth(scene_name):
         # Construct the image path using the provided directory
         image_path = f"{scenes_directory}/{scene_name}/observation_result/depth_image.jpg"
         return send_file(image_path, mimetype="image/jpeg")  # Adjust mimetype as per your image type
-    
+
     # Define a route to serve images
     @app.route("/scenes/<scene_name>/mask")
     def get_mask(scene_name):
@@ -183,20 +181,19 @@ def create_app(scenes_directory, q, ack, queued_scenes):
             return send_file(image_path, mimetype="image/png")  # Adjust mimetype as per your image type
         except FileNotFoundError:
             return jsonify({"error": "Mask not found"})
-    
+
     # Define a route to serve images
     @app.route("/scenes/<scene_name>/coverage")
     def get_coverage(scene_name):
         # Construct the image path using the provided directory
-        
-        coverage = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/coverage.json"))
 
+        coverage = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/coverage.json"))
 
         return jsonify(coverage)
 
     @app.route("/api/scenes", methods=["GET"])
     def get_scenes():
-        scene_names = os.listdir(scenes_directory)
+        scene_names = sorted(os.listdir(scenes_directory))
         scenes_info = []
 
         for scene_name in scene_names:
@@ -209,10 +206,18 @@ def create_app(scenes_directory, q, ack, queued_scenes):
             if result_exists:
                 result = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/result.json"))
             elif scene_name not in queued_scenes:
-                intrinsics = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/camera_intrinsics.json"))
-                extrinsics = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/camera_pose_in_world.json"))
-                tcp_left = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/arm_left_tcp_pose_in_world.json"))
-                tcp_right = json.load(open(f"{scenes_directory}/{scene_name}/observation_result/arm_right_tcp_pose_in_world.json"))
+                intrinsics = json.load(
+                    open(f"{scenes_directory}/{scene_name}/observation_result/camera_intrinsics.json")
+                )
+                extrinsics = json.load(
+                    open(f"{scenes_directory}/{scene_name}/observation_result/camera_pose_in_world.json")
+                )
+                tcp_left = json.load(
+                    open(f"{scenes_directory}/{scene_name}/observation_result/arm_left_tcp_pose_in_world.json")
+                )
+                tcp_right = json.load(
+                    open(f"{scenes_directory}/{scene_name}/observation_result/arm_right_tcp_pose_in_world.json")
+                )
 
                 cx = intrinsics["principal_point_in_pixels"]["cx"]
                 cy = intrinsics["principal_point_in_pixels"]["cy"]
@@ -220,7 +225,6 @@ def create_app(scenes_directory, q, ack, queued_scenes):
                 fx = intrinsics["focal_lengths_in_pixels"]["fx"]
                 fy = intrinsics["focal_lengths_in_pixels"]["fy"]
 
-                position = extrinsics["position_in_meters"]
                 position = extrinsics["position_in_meters"]
                 rotation = extrinsics["rotation_euler_xyz_in_radians"]
 
@@ -232,12 +236,21 @@ def create_app(scenes_directory, q, ack, queued_scenes):
 
                 tcp_left_position = tcp_left["position_in_meters"]
                 tcp_right_position = tcp_right["position_in_meters"]
-                
-                #TODO: bit hacky, the tcp positions seem funky
-                c1 = np.array([-tcp_left_position["x"], tcp_left_position["y"] + 0.1, tcp_left_position["z"]])
-                c2 = np.array([tcp_right_position["x"], -tcp_right_position["y"] - 0.1, tcp_right_position["z"]])
-                c3 = np.array([-tcp_left_position["x"], tcp_left_position["y"] + 0.1, 0.15])
-                c4 = np.array([tcp_right_position["x"], -tcp_right_position["y"] - 0.1, 0.15])
+
+                x_left = tcp_left_position["x"]
+                y_left = tcp_left_position["y"]
+                z_left = tcp_left_position["z"]
+
+                x_right = tcp_right_position["x"]
+                y_right = tcp_right_position["y"]
+                z_right = tcp_right_position["z"]
+
+                # Create the 3D rectangle for the bounding box
+                y_padding = 0.1
+                c1 = np.array([x_left, y_left + y_padding, z_left])
+                c2 = np.array([x_right, y_right - y_padding, z_right])
+                c3 = np.array([x_left, y_left + y_padding, 0.05])
+                c4 = np.array([x_right, y_right - y_padding, 0.05])
 
                 # Generate all corners
                 corners = [c1, c2, c3, c4]
@@ -248,39 +261,43 @@ def create_app(scenes_directory, q, ack, queued_scenes):
                     X_cam = R.T @ (np.array(corner) - T)
 
                     # Project to the image plane
-                    u = fx * (X_cam[0]/X_cam[2]) + cx
-                    v = fy * (X_cam[1]/X_cam[2]) + cy
+                    u = fx * (X_cam[0] / X_cam[2]) + cx
+                    v = fy * (X_cam[1] / X_cam[2]) + cy
 
                     print("Projected corner", u, v, "for corner", corner)
 
                     projected_corners.append((u, v))
 
                 # Get the 2D bounding box
-                u_min = min(u for u, v in projected_corners)
-                v_min = min(v for u, v in projected_corners)
-                u_max = max(u for u, v in projected_corners)
-                v_max = max(v for u, v in projected_corners)
+                u_min = min(u for u, _ in projected_corners)
+                v_min = min(v for _, v in projected_corners)
+                u_max = max(u for u, _ in projected_corners)
+                v_max = max(v for _, v in projected_corners)
 
                 print("Queueing unannotated scene", scene_name, "with bounding box", u_min, v_min, u_max, v_max)
 
-                q.put({
-                    "sceneName": scene_name,
-                    "x1": u_min,
-                    "y1": v_min,
-                    "x2": u_max,
-                    "y2": v_max,
-                    "outlierThreshold": 0.5,
-                })
+                q.put(
+                    {
+                        "sceneName": scene_name,
+                        "x1": u_min,
+                        "y1": v_min,
+                        "x2": u_max,
+                        "y2": v_max,
+                        "outlierThreshold": 0.5,
+                    }
+                )
                 queued_scenes.add(scene_name)
 
-            scenes_info.append({
-                'sceneName': scene_name,
-                'lastModifiedTime': last_modified_time,
-                'result': result,
-            })
+            scenes_info.append(
+                {
+                    "sceneName": scene_name,
+                    "lastModifiedTime": last_modified_time,
+                    "result": result,
+                }
+            )
 
         return jsonify({"scenes": scenes_info})
-    
+
     @app.route("/api/annotate", methods=["POST"])
     def annotate():
         data = request.get_json()
@@ -293,26 +310,30 @@ def create_app(scenes_directory, q, ack, queued_scenes):
             if processed_scene == data["sceneName"]:
                 return jsonify({})
 
-        
-
     return app
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run Flask server to serve the competition scenes")
     parser.add_argument("scenes_directory", type=str, help="Path to the directory containing the scenes")
-    parser.add_argument("--model", default="b", type=str, choices=['h', 'l', 'b'], help="Model size (h, l, or b)")
-    parser.add_argument('--cuda', action='store_true', help='Use CUDA if available')
+    parser.add_argument("--model", default="b", type=str, choices=["h", "l", "b"], help="Model size (h, l, or b)")
+    parser.add_argument("--cuda", action="store_true", help="Use CUDA if available")
 
     args = parser.parse_args()
 
     q = Queue()
     ack = Queue()
 
-    p = Process(target=sam_worker, args=(q,ack,args,))
+    p = Process(
+        target=sam_worker,
+        args=(
+            q,
+            ack,
+            args,
+        ),
+    )
     p.start()
 
-    
     queued_scenes = set()
 
     app = create_app(args.scenes_directory, q, ack, queued_scenes)
