@@ -180,7 +180,7 @@ const App = () => {
     setCurrentScene(selectedOption.value);
     setMaskImage(null);
     updateImageSources(selectedOption.value.sceneName);
-    
+
   };
 
   const handleMouseDown = (e) => {

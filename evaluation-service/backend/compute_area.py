@@ -1,5 +1,5 @@
-import numpy as np
 import cv2
+import numpy as np
 
 
 def calculate_pixel_areas_for_image(depth_image_path, mask_image_path, fx, fy, cx, cy):
@@ -21,11 +21,13 @@ def calculate_pixel_areas_for_image(depth_image_path, mask_image_path, fx, fy, c
     lower_bound = mean - 0.5
     upper_bound = mean + 0.5
 
-    masked_depth_map = np.where((masked_depth_map > lower_bound) & (masked_depth_map < upper_bound), masked_depth_map, 0)
+    masked_depth_map = np.where(
+        (masked_depth_map > lower_bound) & (masked_depth_map < upper_bound), masked_depth_map, 0
+    )
 
     x, y = np.meshgrid(np.arange(masked_depth_map.shape[1]), np.arange(masked_depth_map.shape[0]))
 
-    X1 = (x - 0.5 - cx) * masked_depth_map/ fx
+    X1 = (x - 0.5 - cx) * masked_depth_map / fx
     Y1 = (y - 0.5 - cy) * masked_depth_map / fy
     X2 = (x + 0.5 - cx) * masked_depth_map / fx
     Y2 = (y + 0.5 - cy) * masked_depth_map / fy
@@ -35,24 +37,21 @@ def calculate_pixel_areas_for_image(depth_image_path, mask_image_path, fx, fy, c
 
     print("masked areas", np.sum(pixel_areas_masked))
 
-    
-
     # Normalize the pixel areas to the range 0-255
-    pixel_areas_normalized = cv2.normalize(pixel_areas_masked, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+    pixel_areas_normalized = cv2.normalize(
+        pixel_areas_masked, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX, dtype=cv2.CV_8U
+    )
 
     # # # Display the normalized pixel areas
-    cv2.imshow('Pixel Areas', pixel_areas_normalized)
+    cv2.imshow("Pixel Areas", pixel_areas_normalized)
 
     # Wait for a key press and close the window
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 
-
-
 if __name__ == "__main__":
 
-    
     # "image_resolution": {
     #     "width": 2208,
     #     "height": 1242
@@ -77,4 +76,5 @@ if __name__ == "__main__":
         fx,
         fy,
         cx,
-        cy)
+        cy,
+    )
