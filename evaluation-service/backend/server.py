@@ -1,6 +1,8 @@
 import argparse
 import sys
+from pathlib import Path
 
+from cloth_tools.dataset.bookkeeping import find_highest_suffix
 from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 from loguru import logger
@@ -163,25 +165,25 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     def index():
         root_dir = "./static"  # Directory you want to explore
         if os.path.isdir(root_dir):
-            files = os.listdir(root_dir)
+            files = sorted(os.listdir(root_dir))
             return render_template("explorer.html", root=root_dir, files=files)
 
     @app.route("/explore")
     def explore():
         root_dir = request.args.get("dir", ".")
         if os.path.isdir(root_dir):
-            files = os.listdir(root_dir)
+            files = sorted(os.listdir(root_dir))
             return render_template("explorer.html", root=root_dir, files=files)
         else:
             return "Invalid directory"
 
-    @app.route("/download")
-    def download_file():
-        file_path = request.args.get("file")
-        if os.path.isfile(file_path):
-            return send_file(file_path, as_attachment=True)
-        else:
-            return "File not found"
+    @app.route("/latest_observation_start_dir")
+    def latest_observation_start_dir():
+        dataset_dir = "./static/data/cloth_competition_dataset_0001"
+        sample_index = find_highest_suffix(dataset_dir, "sample")
+        sample_dir = Path(dataset_dir) / f"sample_{sample_index:06d}"
+        observation_start_dir = sample_dir / "observation_start"
+        return str(observation_start_dir)
 
     # Define a route to serve images
     @app.route("/scenes/<scene_name>/image")
