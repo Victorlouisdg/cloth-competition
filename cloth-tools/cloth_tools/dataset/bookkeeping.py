@@ -7,7 +7,35 @@ In general we number files and directories with a suffix that is left-padded wit
             sample_000000.ply
         - sample_000001
 """
+import datetime
 import os
+
+
+def datetime_for_filename(include_us=True, use_UTC=True) -> str:
+    """Return a string with the current date and time formatted for use in filenames.
+
+    Based on the ISO 8601 standard but optionally adds microseconds.
+
+    Note that for the time to be accurate, make sure your system clock is synchronized.
+    To check this on linux you can run: timedatectl status
+
+    Args:
+        include_us: Whether to include microseconds.
+        use_UTC: Whether to use UTC time.
+
+    Returns:
+        A string with the current date and time in the format YYYY-MM-DD_HH-MM-SS-ffffff.
+    """
+    if use_UTC:
+        now = datetime.datetime.now(datetime.timezone.utc)
+    else:
+        now = datetime.datetime.now()
+
+    datetime_str = now.strftime("%Y-%m-%d_%H-%M-%S")
+    if include_us:
+        datetime_str += now.strftime("-%f")
+
+    return datetime_str
 
 
 def find_highest_suffix(dir: str, name: str, extension: str | None = None) -> int:
