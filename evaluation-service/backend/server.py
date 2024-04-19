@@ -2,10 +2,12 @@ import argparse
 import sys
 from pathlib import Path
 
-from cloth_tools.dataset.bookkeeping import find_highest_suffix
+from airo_dataset_tools.data_parsers.pose import Pose
+from cloth_tools.dataset.bookkeeping import datetime_for_filename, find_latest_dir
 from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 from loguru import logger
+from werkzeug.utils import secure_filename
 
 sys.path.append("..")
 import datetime
@@ -179,11 +181,61 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
 
     @app.route("/latest_observation_start_dir")
     def latest_observation_start_dir():
-        dataset_dir = "./static/data/cloth_competition_dataset_0001"
-        sample_index = find_highest_suffix(dataset_dir, "sample")
-        sample_dir = Path(dataset_dir) / f"sample_{sample_index:06d}"
-        observation_start_dir = sample_dir / "observation_start"
+        # TODO make the team a command line argument, or search over all teams
+        sample_dir = find_latest_dir("static/data/remote_dry_run_2024-04-26/dummy_team", "sample_")
+        observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
+
+    ALLOWED_EXTENSIONS = {"json"}
+
+    def allowed_file(filename):
+        return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+    @app.route("/upload_grasp", methods=["POST"])
+    def upload_grasp():
+        # TODO clean up these checks
+        if "file" not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+
+        file = request.files["file"]
+
+        if not file:
+            return jsonify({"error": "No file selected"}), 400
+
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
+
+        if not file or not allowed_file(file.filename):
+            return jsonify({"error": "Invalid file type"}), 400
+
+        # Try to parse the file with pydantic
+        try:
+            # grasp_pose_model = Pose.model_validate_json(json.load(file))
+            file_contents = file.read().decode("utf-8")  # Read file contents as text
+            grasp_pose_model = Pose.parse_raw(file_contents)  # Use Pydantic's parse_raw
+            grasp_pose_model.as_homogeneous_matrix()
+        except Exception as e:
+            return jsonify({"error": f"Invalid file: {e}"}), 400
+
+        current_upload_dir = "./static/data/remote_dry_run_2024-04-26"
+
+        # sample_id = "2024-04-26_00-00-00-000000"
+        sample_id = request.form.get("sample_id")
+        team_name = request.form.get("team_name")
+
+        sample_id = secure_filename(sample_id)
+        team_name = secure_filename(team_name)
+
+        # teamname = "dummy_team"
+        grasps_dirname = f"grasps_{sample_id}"
+        grasps_dir = os.path.join(current_upload_dir, team_name, grasps_dirname)
+        os.makedirs(grasps_dir, exist_ok=True)
+        filename = f"grasp_{datetime_for_filename()}.json"
+        filepath = os.path.join(grasps_dir, filename)
+        file = request.files["file"]  #
+        file.seek(0)
+        file.save(filepath)
+        return jsonify({"message": "File uploaded successfully"}), 201
 
     # Define a route to serve images
     @app.route("/scenes/<scene_name>/image")
@@ -363,6 +415,6 @@ if __name__ == "__main__":
     queued_scenes = set()
 
     app = create_app(args.scenes_directory, q, ack, queued_scenes)
-    app.run(debug=True, host="0.0.0.0")
+    app.run(debug=True, host="0.0.0.0", use_reloader=False)
 
     p.join()
