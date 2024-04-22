@@ -9,4 +9,5 @@ onnx
 flask
 Flask-Cors
 scipy
+loguru
 ../submodules/segment-anything

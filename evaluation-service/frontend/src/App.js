@@ -1,7 +1,7 @@
 // App.js
 import "./App.css";
 import React, { useState, useEffect, useRef } from "react";
-import { Stage, Layer, Image, Text, Rect } from "react-konva";
+import { Stage, Layer, Image, Rect, Circle } from "react-konva";
 import axios from "axios";
 import Select from "react-select";
 import Switch from "react-switch";
@@ -56,7 +56,46 @@ const App = () => {
   const [drawing, setDrawing] = useState(false);
   const [outlierThreshold, setOutlierThreshold] = useState(null);
 
+  const [positiveKeypoints, setPositiveKeypoints] = useState([]);
+  const [negativeKeypoints, setNegativeKeypoints] = useState([]);
+
+  const [annotationMode, setAnnotationMode] = useState("positive");
+
   const maskImageRef = React.useRef();
+
+  const scale = image?.scale;
+
+  const setAnnotationsFromResult = (result, image) => {
+
+    if (!result || !image?.scale) return;
+
+    setRect({
+      x: result.bbox.x1 * scale,
+      y: result.bbox.y1 * scale,
+      width: (result.bbox.x2 - result.bbox.x1) * scale,
+      height: (result.bbox.y2 - result.bbox.y1) * scale,
+    });
+
+    setPositiveKeypoints(
+      result.positiveKeypoints.map((pos) => ({
+        x: pos[0] * scale,
+        y: pos[1] * scale,
+      }))
+    );
+
+    setNegativeKeypoints(
+      result.negativeKeypoints.map((pos) => ({
+        x: pos[0] * scale,
+        y: pos[1] * scale,
+      }))
+    );
+
+  }
+
+  useEffect(() => {
+    const result = currentScene?.result;
+    setAnnotationsFromResult(result, image);
+  }, [image, currentScene]);
 
   React.useEffect(() => {
     if (maskImage) {
@@ -66,8 +105,6 @@ const App = () => {
 
   const updateImageSources = (sceneName) => {
     const maxWidth = window.innerWidth * 0.8;
-
-    console.log("Fetching images for scene:", sceneName);
 
     try {
       const maskImg = new window.Image();
@@ -113,6 +150,13 @@ const App = () => {
 
   const handleRefresh = async () => {
     updateAvailableScenes();
+    setAnnotationsFromResult(currentScene?.result, image);
+  };
+
+  const handleClearManualAnnotations = async () => {
+    setPositiveKeypoints([]);
+    setNegativeKeypoints([]);
+    setRect(null);
   };
 
   const handleOutlierThresholdChange = (event) => {
@@ -139,14 +183,16 @@ const App = () => {
   }, []);
 
   useEffect(() => {
-    console.log("Available scenes:", availableScenes);
     const sortedScenes = availableScenes.sort(
       (a, b) => new Date(b.lastModifiedTime) - new Date(a.lastModifiedTime)
     );
 
     if (sortedScenes.length > 0) {
       const sceneToSet = sortedScenes[0];
-      if (!currentScene || (autoLoad && sceneToSet.sceneName !== currentScene.sceneName)) {
+      if (
+        !currentScene ||
+        (autoLoad && sceneToSet.sceneName !== currentScene.sceneName)
+      ) {
         setCurrentScene(sceneToSet);
         setMaskImage(null);
         updateImageSources(sceneToSet.sceneName);
@@ -158,7 +204,6 @@ const App = () => {
       );
 
       if (!_.isEqual(updatedScene, currentScene)) {
-        console.log("Scene not eq", updatedScene, currentScene);
         setCurrentScene(updatedScene);
         setMaskImage(null);
         updateImageSources(updatedScene.sceneName);
@@ -178,12 +223,28 @@ const App = () => {
 
   const handleChange = (selectedOption) => {
     setCurrentScene(selectedOption.value);
+    handleClearManualAnnotations();
     setMaskImage(null);
     updateImageSources(selectedOption.value.sceneName);
-
   };
 
   const handleMouseDown = (e) => {
+    if (annotationMode === "positive") {
+      setPositiveKeypoints((points) => [
+        ...points,
+        e.target.getStage().getPointerPosition(),
+      ]);
+      return;
+    }
+
+    if (annotationMode === "negative") {
+      setNegativeKeypoints((points) => [
+        ...points,
+        e.target.getStage().getPointerPosition(),
+      ]);
+      return;
+    }
+
     setDrawing(true);
     const pos = e.target.getStage().getPointerPosition();
     setRect({ x: pos.x, y: pos.y, width: 10, height: 10 });
@@ -208,10 +269,20 @@ const App = () => {
     const { x, y, width, height } = rect;
     axios
       .post("http://127.0.0.1:5000/api/annotate", {
-        x1: x / image.scale,
-        y1: y / image.scale,
-        x2: (x + width) / image.scale,
-        y2: (y + height) / image.scale,
+        bbox: {
+          x1: x / image.scale,
+          y1: y / image.scale,
+          x2: (x + width) / image.scale,
+          y2: (y + height) / image.scale,
+        },
+        positiveKeypoints: positiveKeypoints.map((pos) => [
+          pos.x / image.scale,
+          pos.y / image.scale,
+        ]),
+        negativeKeypoints: negativeKeypoints.map((pos) => [
+          pos.x / image.scale,
+          pos.y / image.scale,
+        ]),
         outlierThreshold: outlierThreshold ?? currentResult?.outlierThreshold,
         sceneName: currentScene?.sceneName,
       })
@@ -219,6 +290,7 @@ const App = () => {
         updateAvailableScenes();
       })
       .catch((error) => {
+        console.error("Error annotating:", error);
         console.error("Error fetching coordinates:", error);
       })
       .finally(() => {
@@ -227,23 +299,24 @@ const App = () => {
   };
 
   const currentResult = currentScene?.result;
-  const scale = image?.scale;
 
-  const selectOptions = availableScenes.map((scene) => ({
-    value: scene,
-    label: scene.sceneName,
-  }));
+  const selectOptions = availableScenes
+    .map((scene) => ({
+      value: scene,
+      label: scene.sceneName,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label));
 
-  const uiRect = !!rect
-    ? rect
-    : !!currentResult && !!scale
-    ? {
-        x: currentResult.x1 * scale,
-        y: currentResult.y1 * scale,
-        width: (currentResult.x2 - currentResult.x1) * scale,
-        height: (currentResult.y2 - currentResult.y1) * scale,
-      }
-    : null;
+  const annotationModeSelectOptions = ["positive", "negative", "box"].map(
+    (mode) => ({
+      value: mode,
+      label: mode.charAt(0).toUpperCase() + mode.slice(1),
+    })
+  );
+
+  console.log("Current rect:", rect);
+  console.log("Current positive keypoints:", positiveKeypoints);
+  console.log("Current negative keypoints:", negativeKeypoints);
 
   return (
     <>
@@ -272,10 +345,29 @@ const App = () => {
       </Modal>
 
       <div className="flex items-center justify-between p-4 bg-gray-800 text-white font-sans">
-        <h1 className="text-4xl font-bold">👕👔🥼🦺👖🧣🧤🧥🧦👗👘</h1>
+        <h1 className="text-4xl font-bold">👕👔🥼🦺🧥👘</h1>
 
         <div className="flex items-center justify-between space-x-4">
           <div className="flex items-center space-x-4">
+            <div>Manual label mode</div>
+            <Select
+              value={annotationModeSelectOptions.find(
+                (option) => option.value === annotationMode
+              )}
+              onChange={(selectedOption) =>
+                setAnnotationMode(selectedOption.value)
+              }
+              options={annotationModeSelectOptions}
+              placeholder="Select annotation mode"
+              styles={customStyles}
+            />
+            <button
+              className="px-2 py-2 bg-blue-500 hover:bg-blue-700 text-white font-bold rounded"
+              onClick={handleClearManualAnnotations}
+            >
+              Clear manual labels
+            </button>
+            <div>Scene</div>
             <Select
               value={selectOptions.find(
                 (option) => option.value.sceneName === currentScene?.sceneName
@@ -308,11 +400,15 @@ const App = () => {
             />
             <div>Show Depth</div>
 
+            {/*
+            
+            A bit bug prone, needs more testing
+            
             <Switch
               onChange={() => setAutoLoad(!autoLoad)}
               checked={autoLoad}
             />
-            <div>Auto select newest scene</div>
+            <div>Auto select newest scene</div> */}
           </div>
         </div>
       </div>
@@ -356,20 +452,22 @@ const App = () => {
                       : "Draw a new rectangle to create a new segmentation"
                   }
                 >
-                  Get New Segmentation
+                  Segment
                 </button>
                 <div className="ml-4">
                   <label
                     htmlFor="outlierThreshold"
                     className="block text-sm font-bold mb-1"
                   >
-                    Depth Outlier Threshold (m2):
+                    Depth outlier threshold (m2):
                   </label>
                   <input
                     type="number"
                     id="outlierThreshold"
                     name="outlierThreshold"
-                    value={outlierThreshold ?? currentResult?.outlierThreshold ?? 0.1}
+                    value={
+                      outlierThreshold ?? currentResult?.outlierThreshold ?? 0.1
+                    }
                     onChange={handleOutlierThresholdChange}
                     className="shadow appearance-none border rounded w-24 py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                   />
@@ -415,7 +513,13 @@ const App = () => {
                   ref={maskImageRef}
                 />
               )}
-              <Rect {...uiRect} stroke="#007BFF" strokeWidth={4} />
+              {!!rect && <Rect {...rect} stroke="#007BFF" strokeWidth={4} />}
+              {positiveKeypoints.map((pos, i) => (
+                <Circle key={i} x={pos.x} y={pos.y} radius={5} fill="green" />
+              ))}
+              {negativeKeypoints.map((pos, i) => (
+                <Circle key={i} x={pos.x} y={pos.y} radius={5} fill="red" />
+              ))}
             </Layer>
           </Stage>
         </div>

@@ -72,10 +72,16 @@ def sam_worker(q, ack, args):
         data = q.get()
         print("Data received", data)
 
-        x1 = data["x1"]
-        y1 = data["y1"]
-        x2 = data["x2"]
-        y2 = data["y2"]
+        manual = data["manual"]
+
+        bbox = data["bbox"]
+        positive_keypoints = data["positiveKeypoints"]
+        negative_keypoints = data["negativeKeypoints"]
+
+        x1 = bbox["x1"]
+        y1 = bbox["y1"]
+        x2 = bbox["x2"]
+        y2 = bbox["y2"]
 
         if "outlierThreshold" in data and data["outlierThreshold"] is not None:
             outlier_threshold = float(data["outlierThreshold"])
@@ -91,9 +97,22 @@ def sam_worker(q, ack, args):
 
         input_box = np.array([[x1, y1, x2, y2]])
 
+        input_point = []
+        input_label = []
+
+        for point in positive_keypoints:
+            input_point.append(point)
+            input_label.append(1)
+
+        for point in negative_keypoints:
+            input_point.append(point)
+            input_label.append(0)
+
+        logger.info(f"Predicting for scene {scene_name} with box {input_box} and input points {input_point} and labels {input_label}")
+
         masks, _, _ = predictor.predict(
-            point_coords=None,
-            point_labels=None,
+            point_coords=np.array(input_point) if len(input_point) > 0 else None,
+            point_labels=np.array(input_label) if len(input_label) > 0 else None,
             box=input_box[None, :],
             multimask_output=False,
         )
@@ -138,10 +157,14 @@ def sam_worker(q, ack, args):
 
         json.dump(
             {
-                "x1": x1,
-                "y1": y1,
-                "x2": x2,
-                "y2": y2,
+                "bbox": {
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
+                },
+                "positiveKeypoints": positive_keypoints,
+                "negativeKeypoints": negative_keypoints,
                 "outlierThreshold": outlier_threshold,
                 "coverage": np.sum(pixel_areas),
             },
@@ -149,7 +172,8 @@ def sam_worker(q, ack, args):
         )
 
         print("Data processed")
-        ack.put(scene_name)
+        if manual:
+            ack.put(scene_name)
 
 
 def get_last_modified_time(directory):
@@ -357,11 +381,11 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
                 q.put(
                     {
                         "sceneName": scene_name,
-                        "x1": u_min,
-                        "y1": v_min,
-                        "x2": u_max,
-                        "y2": v_max,
+                        "bbox": {"x1": u_min, "y1": v_min, "x2": u_max, "y2": v_max},
+                        "positiveKeypoints": [],
+                        "negativeKeypoints": [],
                         "outlierThreshold": 0.5,
+                        "manual": False,
                     }
                 )
                 queued_scenes.add(scene_name)
@@ -379,13 +403,18 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/api/annotate", methods=["POST"])
     def annotate():
         data = request.get_json()
+        data["manual"] = True
         q.put(data)
 
+        logger.info(f"Manually queueing scene {data['sceneName']} for annotation")
+
         while True:
+            logger.info(f"Waiting for scene {data['sceneName']} to be processed")
             processed_scene = ack.get()
-            print("Processed scene", processed_scene, "asked for", data["sceneName"])
+            logger.info(f"Processed scene {processed_scene} asked for {data['sceneName']}")
 
             if processed_scene == data["sceneName"]:
+                logger.info(f"Scene {data['sceneName']} processed")
                 return jsonify({})
 
     return app
