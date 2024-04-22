@@ -50,6 +50,16 @@ def get_latest_observation_start_url(server_url: str) -> str:
 
 
 def download_latest_observation(dataset_dir: str, server_url: str) -> tuple[str, str]:
+    """Download the latest start observation's files from the Cloth Competition server.
+    Also returns the sample ID, which must be used when uploading a grasp.json file.
+
+    Args:
+        dataset_dir: The directory to save observation files to.
+        server_url: URL of the server to download from.
+
+    Returns:
+        A tuple containing the path to the observation directory and the sample ID.
+    """
     files_to_retrieve = COMPETITION_OBSERVATION_FILENAMES
     observation_dir_url = get_latest_observation_start_url(server_url)
 
