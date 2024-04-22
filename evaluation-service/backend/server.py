@@ -108,7 +108,9 @@ def sam_worker(q, ack, args):
             input_point.append(point)
             input_label.append(0)
 
-        logger.info(f"Predicting for scene {scene_name} with box {input_box} and input points {input_point} and labels {input_label}")
+        logger.info(
+            f"Predicting for scene {scene_name} with box {input_box} and input points {input_point} and labels {input_label}"
+        )
 
         masks, _, _ = predictor.predict(
             point_coords=np.array(input_point) if len(input_point) > 0 else None,

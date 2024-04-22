@@ -401,9 +401,9 @@ const App = () => {
             <div>Show Depth</div>
 
             {/*
-            
+
             A bit bug prone, needs more testing
-            
+
             <Switch
               onChange={() => setAutoLoad(!autoLoad)}
               checked={autoLoad}
