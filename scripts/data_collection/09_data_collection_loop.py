@@ -8,7 +8,7 @@ from cloth_tools.controllers.grasp_highest_controller import GraspHighestControl
 from cloth_tools.controllers.grasp_lowest_controller import GraspLowestController
 from cloth_tools.controllers.home_controller import HomeController
 from cloth_tools.controllers.stretch_controller import StretchController
-from cloth_tools.dataset.bookkeeping import ensure_dataset_dir, find_highest_suffix
+from cloth_tools.dataset.bookkeeping import find_highest_suffix
 from cloth_tools.dataset.collection import collect_observation
 from cloth_tools.dataset.format import save_competition_observation
 from cloth_tools.motion_blur_detector import MotionBlurDetector
@@ -30,11 +30,12 @@ if __name__ == "__main__":
     camera_intrinsics = camera.intrinsics_matrix()
     camera_resolution = camera.resolution
 
-    dataset_dir = Path(ensure_dataset_dir("notebooks/data/cloth_competition_dataset_0001"))
+    dataset_dir = Path("notebooks/data/remote_dry_run_2024-04-26/dummy_team")
 
     while True:
         start_time = time.time()
 
+        # TODO update to use datetime for id
         sample_index = find_highest_suffix(dataset_dir, "sample") + 1
         sample_dir = dataset_dir / f"sample_{sample_index:06d}"
         sample_dir.mkdir(parents=True, exist_ok=True)

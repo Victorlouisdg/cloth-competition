@@ -1,8 +1,10 @@
 import os
 import urllib
 import zipfile
+from pathlib import Path
 
 import requests
+from cloth_tools.dataset.format import COMPETITION_OBSERVATION_FILENAMES
 from tqdm import tqdm
 
 
@@ -39,3 +41,30 @@ def download_and_extract_dataset(data_dir: str, dataset_zip_url: str) -> str:
         z.extractall(data_dir)
 
     return dataset_dir
+
+
+def get_latest_observation_start_url(server_url: str) -> str:
+    url = server_url + "/latest_observation_start_dir"  # simple API to get the latest observation directory
+    response = requests.get(url)
+    return server_url + "/" + response.text
+
+
+def download_latest_observation(dataset_dir: str, server_url: str) -> tuple[str, str]:
+    files_to_retrieve = COMPETITION_OBSERVATION_FILENAMES
+    observation_dir_url = get_latest_observation_start_url(server_url)
+
+    sample_dirname = observation_dir_url.split("/")[-2]
+    sample_datetime = sample_dirname.split("sample_")[-1]
+
+    sample_dir = Path(dataset_dir) / sample_dirname
+    observation_start_dir = sample_dir / "observation_start"
+    os.makedirs(observation_start_dir, exist_ok=True)
+
+    for _, filename in files_to_retrieve.items():
+        url = observation_dir_url + "/" + filename
+        response = requests.get(url)
+        filepath = os.path.join(observation_start_dir, filename)
+        with open(filepath, "wb") as f:
+            f.write(response.content)
+
+    return str(observation_start_dir), sample_datetime

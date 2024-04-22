@@ -14,9 +14,9 @@ Complete the [Installation 🔧](#installation-🔧) first.
 ### Starting the backend
 To start the backend, run the following command in the `backend` directory:
 ```bash
-python server.py ../images
+python server.py ../dataset
 ```
-where you can replace `../images` with the path to the directory containing the images to segment.
+where you can replace `../dataset` with the path to the directory containing the competition dataset folders.
 
 This will start the server at [http://localhost:5000](http://localhost:5000)
 

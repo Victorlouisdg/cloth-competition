@@ -36,3 +36,26 @@
     transform: rotate(360deg);
   }
 }
+
+.refresh-button {
+  background-color: #4CAF50; /* Green */
+  border: none;
+  color: white;
+  text-align: center;
+  text-decoration: none;
+  display: inline-block;
+  font-size: 18px;
+  margin: 12px;
+  cursor: pointer;
+  border-radius: 25px; /* Makes the button rounder */
+  font-family: Arial, sans-serif; /* Changes the font */
+  font-weight: bold; /* Makes the font bolder */
+  padding: 10px 24px; /* Adds some padding */
+}
+
+.switch-label {
+  margin-right: 6px;
+  margin-left: 10px;
+  font-family: Arial, sans-serif; /* Changes the font */
+  font-weight: bold; /* Makes the font bolder */
+}
