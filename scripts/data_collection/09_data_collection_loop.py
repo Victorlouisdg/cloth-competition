@@ -30,7 +30,7 @@ if __name__ == "__main__":
     camera_intrinsics = camera.intrinsics_matrix()
     camera_resolution = camera.resolution
 
-    dataset_dir = Path("notebooks/data/remote_dry_run_2024-04-26/dummy_team")
+    dataset_dir = Path("notebooks/data/remote_dry_run_2024-04-26/dev_team")
 
     while True:
         start_time = time.time()

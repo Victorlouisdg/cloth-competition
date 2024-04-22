@@ -208,7 +208,7 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/latest_observation_start_dir")
     def latest_observation_start_dir():
         # TODO make the team a command line argument, or search over all teams
-        sample_dir = find_latest_dir("static/data/remote_dry_run_2024-04-26/dummy_team", "sample_")
+        sample_dir = find_latest_dir("static/data/remote_dry_run_2024-04-26/test_team", "sample_")
         observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
 
@@ -252,7 +252,6 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
         sample_id = secure_filename(sample_id)
         team_name = secure_filename(team_name)
 
-        # teamname = "dummy_team"
         grasps_dirname = f"grasps_{sample_id}"
         grasps_dir = os.path.join(current_upload_dir, team_name, grasps_dirname)
         os.makedirs(grasps_dir, exist_ok=True)
