@@ -41,7 +41,7 @@ def plan_pregrasp_and_grasp_trajectory(  # noqa: C901
     is_state_valid_fn_grasp: JointConfigurationCheckerType,  # could make this optional and use planner's by default
     plant_toppra: MultibodyPlant,
     with_left: bool = True,
-) -> tuple[Trajectory]:
+) -> Trajectory:
 
     # We add 1.0 so at least one pregrasp distance fails:
     # pregrasp_distances_to_try = [0.05, 0.1, 0.15]  # , 0.2, 0.25]

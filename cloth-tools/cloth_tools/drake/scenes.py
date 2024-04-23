@@ -4,12 +4,15 @@ import airo_models
 import numpy as np
 import open3d as o3d
 from airo_camera_toolkit.point_clouds.conversions import point_cloud_to_open3d
-from airo_drake import X_URBASE_ROSBASE, add_floor, add_manipulator, add_wall
+from airo_camera_toolkit.point_clouds.operations import crop_point_cloud
+from airo_drake import X_URBASE_ROSBASE, DualArmScene, add_floor, add_manipulator, add_meshcat, add_wall, finish_build
 from airo_models import mesh_urdf_path
-from airo_typing import HomogeneousMatrixType, PointCloud
+from airo_typing import HomogeneousMatrixType, JointConfigurationType, PointCloud
+from cloth_tools.bounding_boxes import BBOX_CLOTH_IN_THE_AIR
+from cloth_tools.dataset.format import CompetitionObservation
 from pydrake.math import RigidTransform, RollPitchYaw
 from pydrake.multibody.tree import ModelInstanceIndex
-from pydrake.planning import RobotDiagramBuilder
+from pydrake.planning import RobotDiagramBuilder, SceneGraphCollisionChecker
 
 # Some fixed transforms and default poses (e.g. for when you don't have access to the real robot)
 ARM_Y_DEFAULT = 0.45
@@ -108,3 +111,84 @@ def add_safety_wall_to_builder(
     plant.WeldFrames(world_frame, safety_wall_frame, X_W_S)
 
     return safety_wall_index
+
+
+def make_drake_scene(
+    X_W_LCB: HomogeneousMatrixType,
+    X_W_RCB: HomogeneousMatrixType,
+    point_cloud: PointCloud = None,
+    X_W_TCP: HomogeneousMatrixType = None,
+) -> DualArmScene:
+    robot_diagram_builder = RobotDiagramBuilder()
+
+    meshcat = add_meshcat(robot_diagram_builder)
+    meshcat.SetCameraPose([-1.5, 0, 1.0], [0, 0, 0])
+
+    (arm_left_index, arm_right_index), (
+        gripper_left_index,
+        gripper_right_index,
+    ) = add_cloth_competition_dual_ur5e_scene(robot_diagram_builder, X_W_LCB, X_W_RCB)
+
+    if point_cloud is not None:
+        point_cloud_cropped = crop_point_cloud(point_cloud, BBOX_CLOTH_IN_THE_AIR)
+        add_cloth_obstacle_to_builder(robot_diagram_builder, point_cloud_cropped)
+
+    if X_W_TCP is not None:
+        add_safety_wall_to_builder(robot_diagram_builder, X_W_TCP)
+
+    robot_diagram, _ = finish_build(robot_diagram_builder, meshcat)
+
+    scene = DualArmScene(
+        robot_diagram, arm_left_index, arm_right_index, gripper_left_index, gripper_right_index, meshcat
+    )
+    return scene
+
+
+def set_dual_arm_joints(
+    scene: DualArmScene, arm_left_joints: JointConfigurationType, arm_right_joints: JointConfigurationType
+) -> None:
+    """Set the joint positions of the dual arm scene to the given joint positions.
+
+    Note that this is only for visualization.
+    """
+    robot_diagram = scene.robot_diagram
+    context = robot_diagram.CreateDefaultContext()
+    plant = robot_diagram.plant()
+    plant_context = plant.GetMyContextFromRoot(context)
+    plant.SetPositions(plant_context, scene.arm_left_index, arm_left_joints)
+    plant.SetPositions(plant_context, scene.arm_right_index, arm_right_joints)
+    robot_diagram.ForcedPublish(context)
+
+
+def make_drake_scene_from_observation(
+    observation: CompetitionObservation, include_cloth_obstacle=True
+) -> DualArmScene:
+    X_W_LCB = observation.arm_left_pose_in_world
+    X_W_RCB = observation.arm_right_pose_in_world
+
+    point_cloud = None
+    X_W_TCP = None
+    if include_cloth_obstacle:
+        point_cloud = observation.point_cloud
+        X_W_TCP = observation.arm_left_tcp_pose_in_world
+
+    scene = make_drake_scene(X_W_LCB, X_W_RCB, point_cloud, X_W_TCP)
+
+    set_dual_arm_joints(scene, observation.arm_left_joints, observation.arm_right_joints)
+    return scene
+
+
+def make_dual_arm_collision_checker(scene: DualArmScene) -> SceneGraphCollisionChecker:
+    collision_checker = SceneGraphCollisionChecker(
+        model=scene.robot_diagram,
+        robot_model_instances=[
+            scene.arm_left_index,
+            scene.arm_right_index,
+            scene.gripper_left_index,
+            scene.gripper_right_index,
+        ],
+        edge_step_size=0.125,  # Arbitrary value: we don't use the CheckEdgeCollisionFree
+        env_collision_padding=0.005,
+        self_collision_padding=0.005,
+    )
+    return collision_checker
