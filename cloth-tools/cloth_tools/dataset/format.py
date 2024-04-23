@@ -21,6 +21,7 @@ from airo_typing import (
     NumpyIntImageType,
     PointCloud,
 )
+from cloth_tools.dataset.bookkeeping import datetime_for_filename
 from loguru import logger
 from pydantic import BaseModel
 
@@ -219,3 +220,16 @@ def load_competition_observation(observation_dir: str) -> CompetitionObservation
         camera_intrinsics=camera_intrinsics,
         camera_resolution=camera_resolution,
     )
+
+
+def save_grasp_pose(dir: str, grasp_pose: HomogeneousMatrixType) -> str:
+    os.makedirs(dir, exist_ok=True)
+
+    grasp_pose_name = f"grasp_pose_{datetime_for_filename()}.json"
+    grasp_pose_file = os.path.join(dir, grasp_pose_name)
+
+    with open(grasp_pose_file, "w") as f:
+        grasp_pose_model = Pose.from_homogeneous_matrix(grasp_pose)
+        json.dump(grasp_pose_model.model_dump(exclude_none=False), f, indent=4)
+
+    return grasp_pose_file
