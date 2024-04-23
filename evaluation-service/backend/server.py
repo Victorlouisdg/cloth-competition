@@ -255,7 +255,7 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
         grasps_dirname = f"grasps_{sample_id}"
         grasps_dir = os.path.join(current_upload_dir, team_name, grasps_dirname)
         os.makedirs(grasps_dir, exist_ok=True)
-        filename = f"grasp_{datetime_for_filename()}.json"
+        filename = f"grasp_pose_{datetime_for_filename()}.json"
         filepath = os.path.join(grasps_dir, filename)
         file = request.files["file"]  #
         file.seek(0)
