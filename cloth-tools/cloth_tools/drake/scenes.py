@@ -131,10 +131,12 @@ def make_drake_scene(
 
     if point_cloud is not None:
         point_cloud_cropped = crop_point_cloud(point_cloud, BBOX_CLOTH_IN_THE_AIR)
-        add_cloth_obstacle_to_builder(robot_diagram_builder, point_cloud_cropped)
 
-    if X_W_TCP is not None:
-        add_safety_wall_to_builder(robot_diagram_builder, X_W_TCP)
+        if len(point_cloud_cropped.points) > 0:
+            add_cloth_obstacle_to_builder(robot_diagram_builder, point_cloud_cropped)
+
+            if X_W_TCP is not None:
+                add_safety_wall_to_builder(robot_diagram_builder, X_W_TCP)
 
     robot_diagram, _ = finish_build(robot_diagram_builder, meshcat)
 

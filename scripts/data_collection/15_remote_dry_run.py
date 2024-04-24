@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 from airo_camera_toolkit.cameras.multiprocess.multiprocess_video_recorder import MultiprocessVideoRecorder
+from cloth_tools.controllers.dry_run_grasp_controller import DryRunGraspController
 from cloth_tools.controllers.hang_controller import HangController
 from cloth_tools.controllers.stretch_controller import StretchController
 from cloth_tools.dataset.bookkeeping import datetime_for_filename
@@ -48,7 +49,11 @@ if __name__ == "__main__":
     observation_start = collect_observation(station)
     save_competition_observation(observation_start, observation_start_dir)
 
-    # TODO create controller that checks grasps_dir for new grasps, and executes the first one it can plan
+    dry_run_grasp_controller = DryRunGraspController(station, observation_start, grasps_dir)
+    dry_run_grasp_controller.execute()
+
+    # TODO Do I need to handle case where no grasp sent or grasp not plannable?
+    # Maybe just Keyboard interrupt?
 
     stretch_controller = StretchController(station)
     stretch_controller.execute(interactive=False)
