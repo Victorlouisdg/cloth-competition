@@ -49,7 +49,7 @@ if __name__ == "__main__":
     observation_start = collect_observation(station)
     save_competition_observation(observation_start, observation_start_dir)
 
-    dry_run_grasp_controller = DryRunGraspController(station, observation_start, grasps_dir)
+    dry_run_grasp_controller = DryRunGraspController(station, sample_dir, grasps_dir)
     dry_run_grasp_controller.execute()
 
     # TODO Do I need to handle case where no grasp sent or grasp not plannable?

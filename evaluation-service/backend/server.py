@@ -212,6 +212,13 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
         observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
 
+    @app.route("/dev_latest_observation_start_dir")
+    def dev_latest_observation_start_dir():
+        # TODO make the team a command line argument, or search over all teams
+        sample_dir = find_latest_dir("static/data/remote_dry_run_2024-04-26/dev_team", "sample_")
+        observation_start_dir = Path(sample_dir) / "observation_start"
+        return str(observation_start_dir)
+
     ALLOWED_EXTENSIONS = {"json"}
 
     def allowed_file(filename):
