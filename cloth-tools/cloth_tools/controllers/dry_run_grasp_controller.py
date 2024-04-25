@@ -150,6 +150,16 @@ class DryRunGraspController(Controller):
                     # copy filepath to grasp_pose_file
                     shutil.copy2(filepath, grasp_pose_file)
 
+                    # TODO also save image with grasp
+                    image_copy = observation.image_left.copy()
+                    image_annotated = cv2.cvtColor(image_copy, cv2.COLOR_RGB2BGR)
+                    draw_pose(
+                        image_annotated, grasp_pose, observation.camera_intrinsics, observation.camera_pose_in_world
+                    )
+
+                    grasp_image_file = grasp_dir / "frontal_image_grasp.jpg"
+                    cv2.imwrite(str(grasp_image_file), image_annotated)
+
                     # Execute the grasp
                     dual_arm = self.station.dual_arm
                     execute_dual_arm_drake_trajectory(dual_arm, trajectory_pregrasp_and_grasp)

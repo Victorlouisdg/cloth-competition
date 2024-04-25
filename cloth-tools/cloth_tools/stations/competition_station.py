@@ -195,6 +195,9 @@ if __name__ == "__main__":
     from airo_camera_toolkit.utils.image_converter import ImageConverter
     from cloth_tools.visualization.opencv import draw_pose
 
+    rr.init("Competition Station - Point cloud")
+    rr.spawn(memory_limit="25%")
+
     # Check whether all hardware is connected
     station = CompetitionStation()
     camera = station.camera
@@ -208,7 +211,8 @@ if __name__ == "__main__":
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(window_name, 1600, 800)
 
-    rr.init("Competition Station - Point cloud", spawn=True)
+    # rr.spawn(memory_limit="25%")
+    # rr.init("Competition Station - Point cloud")
 
     while True:
         image_rgb = camera.get_rgb_image_as_int()

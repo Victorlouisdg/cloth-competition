@@ -1,6 +1,7 @@
 import time
 from pathlib import Path
 
+import rerun as rr
 from airo_camera_toolkit.cameras.multiprocess.multiprocess_video_recorder import MultiprocessVideoRecorder
 from cloth_tools.controllers.dry_run_grasp_controller import DryRunGraspController
 from cloth_tools.controllers.hang_controller import HangController
@@ -9,10 +10,14 @@ from cloth_tools.dataset.bookkeeping import datetime_for_filename
 from cloth_tools.dataset.collection import collect_observation
 from cloth_tools.dataset.format import save_competition_observation
 from cloth_tools.motion_blur_detector import MotionBlurDetector
+from cloth_tools.multiprocess_viewer import MultiprocessViewer
 from cloth_tools.stations.competition_station import CompetitionStation
 from loguru import logger
 
 if __name__ == "__main__":
+    rr.init("Remote dry run")
+    rr.spawn(memory_limit="25%")
+
     current_team = "dev_team"
     dataset_dir = Path(f"notebooks/data/remote_dry_run_2024-04-26/{current_team}")
 
@@ -35,6 +40,9 @@ if __name__ == "__main__":
 
     grasps_dir = dataset_dir / f"grasps_{sample_id}"
     grasps_dir.mkdir(parents=True, exist_ok=False)
+
+    viewer = MultiprocessViewer("camera")
+    viewer.start()
 
     video_path = str(sample_dir / "episode.mp4")
     video_recorder = MultiprocessVideoRecorder("camera", video_path)
@@ -67,5 +75,6 @@ if __name__ == "__main__":
     save_competition_observation(observation_result, observation_result_dir)
 
     video_recorder.stop()
+    viewer.stop()
 
     logger.info(f"Time taken: {time.time() - start_time:.2f} seconds")
