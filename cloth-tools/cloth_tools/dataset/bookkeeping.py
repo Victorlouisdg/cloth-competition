@@ -9,6 +9,7 @@ In general we number files and directories with a suffix that is left-padded wit
 """
 
 import datetime
+import glob
 import os
 
 
@@ -61,6 +62,16 @@ def find_latest_dir(dir: str, prefix: str) -> str:
     sample_dir_most_recent = sample_dirs[index_most_recent]
 
     return os.path.join(dir, sample_dir_most_recent)
+
+
+def find_latest_sample_dir_with_observation_start(base_dir: str) -> str:
+    # TODO handle case when there are none
+    sample_dirs = glob.glob(f"{str(base_dir)}/**/sample_*")  # Recursively search for sample directories
+    sample_dirs += glob.glob(f"{str(base_dir)}/sample_*")  # Search for sample directories in the base directory
+    sample_dirs_with_observation_start = [d for d in sample_dirs if os.path.exists(f"{d}/observation_start")]
+    base_names = [os.path.basename(d) for d in sample_dirs_with_observation_start]
+    sorted_sample_dirs = [x for _, x in sorted(zip(base_names, sample_dirs_with_observation_start), reverse=True)]
+    return sorted_sample_dirs[0]
 
 
 def find_highest_suffix(dir: str, name: str, extension: str | None = None) -> int:

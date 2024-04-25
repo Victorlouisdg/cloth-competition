@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 from airo_dataset_tools.data_parsers.pose import Pose
-from cloth_tools.dataset.bookkeeping import datetime_for_filename, find_latest_dir
+from cloth_tools.dataset.bookkeeping import datetime_for_filename, find_latest_sample_dir_with_observation_start
 from flask import Flask, jsonify, render_template, request, send_file
 from flask_cors import CORS
 from loguru import logger
@@ -208,14 +208,14 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/latest_observation_start_dir")
     def latest_observation_start_dir():
         # TODO make the team a command line argument, or search over all teams
-        sample_dir = find_latest_dir("static/data/remote_dry_run_2024-04-26/test_team", "sample_")
+        sample_dir = find_latest_sample_dir_with_observation_start("static/data/remote_dry_run_2024-04-26")
         observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
 
     @app.route("/dev_latest_observation_start_dir")
     def dev_latest_observation_start_dir():
         # TODO make the team a command line argument, or search over all teams
-        sample_dir = find_latest_dir("static/data/remote_dry_run_2024-04-26/dev_team", "sample_")
+        sample_dir = find_latest_sample_dir_with_observation_start("static/data/remote_dry_run_2024-04-26/dev_team")
         observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
 
