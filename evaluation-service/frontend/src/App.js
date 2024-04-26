@@ -137,8 +137,8 @@ const App = () => {
 
   const updateAvailableScenes = async () => {
     try {
-      const availableScenes = await getAvailableScenes();
-      setAvailableScenes(availableScenes);
+      const loadAvailableScenes = await getAvailableScenes();
+      setAvailableScenes(loadAvailableScenes);
     } catch (error) {
       console.error("Error fetching available files:", error);
     } finally {
@@ -214,7 +214,7 @@ const App = () => {
   const getAvailableScenes = async () => {
     try {
       const response = await axios.get("http://127.0.0.1:5000/api/scenes");
-      return response.data.scenes;
+      return response?.data?.scenes ?? [];
     } catch (error) {
       console.error("Error fetching available files:", error);
       return [];
@@ -432,7 +432,7 @@ const App = () => {
               <>
                 <div className="mb-1">
                   <span className="font-bold">Coverage: </span>
-                  <span>{currentResult?.coverage?.toFixed(3)} m2</span>
+                  <span>{currentResult?.coverage?.toFixed(3)} m</span>
                 </div>
               </>
             )}

@@ -124,6 +124,8 @@ def sam_worker(q, ack, args):
         depth_map_path = f"{scenes_directory}/{scene_name}/observation_result/depth_map.tiff"
         depth_map = cv2.imread(depth_map_path, cv2.IMREAD_UNCHANGED)
 
+        depth_map = np.nan_to_num(depth_map, nan=0, posinf=0, neginf=0)
+
         masked_depth_map = np.where(mask > 0, depth_map, 0)
         masked_values = masked_depth_map[mask > 0]
 
@@ -157,6 +159,8 @@ def sam_worker(q, ack, args):
 
         cv2.imwrite(mask_image_path, ((pixel_areas > 0) * 255).astype(np.uint8))
 
+        coverage = np.nan_to_num(np.sum(pixel_areas), nan=0, posinf=0, neginf=0)
+
         json.dump(
             {
                 "bbox": {
@@ -168,7 +172,7 @@ def sam_worker(q, ack, args):
                 "positiveKeypoints": positive_keypoints,
                 "negativeKeypoints": negative_keypoints,
                 "outlierThreshold": outlier_threshold,
-                "coverage": np.sum(pixel_areas),
+                "coverage": coverage,
             },
             open(f"{scenes_directory}/{scene_name}/observation_result/result.json", "w"),
         )
