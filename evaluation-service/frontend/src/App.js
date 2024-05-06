@@ -367,23 +367,6 @@ const App = () => {
             >
               Clear manual labels
             </button>
-            <div>Scene</div>
-            <Select
-              value={selectOptions.find(
-                (option) => option.value.sceneName === currentScene?.sceneName
-              )}
-              onChange={handleChange}
-              options={selectOptions}
-              placeholder="Select scene"
-              styles={customStyles}
-            />
-
-            <button
-              className="px-4 py-2 bg-blue-500 hover:bg-blue-700 text-white font-bold rounded"
-              onClick={handleRefresh}
-            >
-              Refresh
-            </button>
           </div>
 
           <div className="flex items-center space-x-4">
@@ -416,36 +399,62 @@ const App = () => {
       {!!image && (
         <div className="flex justify-between">
           <div className="ml-5 mt-5">
-            <div className="mb-1">
+            {/* <div className="mb-1">
               <span className="font-bold">Scene: </span>
               <span>{currentScene?.sceneName}</span>
+            </div> */}
+
+            <h2 className="text-2xl font-bold">Sample selection</h2>
+
+            <div className="flex justify-left mt-3">
+              <div className="mr-2 mt-2">Team</div>
+              <Select
+                value={selectOptions.find(
+                  (option) => option.value.sceneName === currentScene?.sceneName
+                )}
+                onChange={handleChange}
+                options={selectOptions}
+                placeholder="Select team"
+                styles={customStyles}
+              />
             </div>
 
-            {annotationIsLoading ? (
-              <div className="mt-3 flex items-center space-x-2">
-                <ClipLoader loading={true} size={30} />
-                <p className="text-sm font-bold text-blue-600">
-                  Manual segmentation in progress
-                </p>
-              </div>
-            ) : (
-              <>
-                <div className="mb-1">
-                  <span className="font-bold">Coverage: </span>
-                  <span>{currentResult?.coverage?.toFixed(3)} m</span>
-                </div>
-              </>
-            )}
+            <div className="flex justify-left mt-1">
+              <div className="mr-2 mt-2">Sample</div>
+              <Select
+                value={selectOptions.find(
+                  (option) => option.value.sceneName === currentScene?.sceneName
+                )}
+                onChange={handleChange}
+                options={selectOptions}
+                placeholder="Sample"
+                styles={customStyles}
+              />
+            </div>
+
+            <button
+              className="mt-2 px-3 py-1 bg-blue-500 hover:bg-blue-700 text-white font-bold rounded"
+              onClick={handleRefresh}
+            >
+              Refresh samples
+            </button>
+
+
+            <h2 className="text-2xl font-bold mt-5">Evaluation</h2>
+
+            <p className="text-sm text-gray-600">
+              Hold mouse down while dragging to draw a rectangle.
+            </p>
+
             <div className="flex flex-col items-start mt-4">
               <div className="flex items-end mb-2">
                 <button
                   disabled={!rect}
                   onClick={annotate}
-                  className={`font-bold py-2 px-4 rounded ${
-                    rect
-                      ? "bg-blue-500 hover:bg-blue-700 text-white"
-                      : "bg-gray-500 text-gray-200 cursor-not-allowed"
-                  }`}
+                  className={`font-bold py-2 px-4 rounded ${rect
+                    ? "bg-blue-500 hover:bg-blue-700 text-white"
+                    : "bg-gray-500 text-gray-200 cursor-not-allowed"
+                    }`}
                   title={
                     rect
                       ? ""
@@ -473,10 +482,24 @@ const App = () => {
                   />
                 </div>
               </div>
-              <p className="text-sm text-gray-600">
-                Hold mouse down while dragging to draw a rectangle.
-              </p>
             </div>
+
+
+            {annotationIsLoading ? (
+              <div className="mt-5 flex items-center space-x-2">
+                <ClipLoader loading={true} size={30} />
+                <p className="text-sm font-bold text-blue-600">
+                  Manual segmentation in progress
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="mt-5 mb-1">
+                  <span className="font-bold">Coverage: </span>
+                  <span>{currentResult?.coverage?.toFixed(3)} m</span>
+                </div>
+              </>
+            )}
           </div>
           <Stage
             onMouseDown={handleMouseDown}
