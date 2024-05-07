@@ -18,12 +18,11 @@ import json
 import os
 
 import numpy as np
-from sam_worker import sam_worker
 
 app = Flask(__name__)
 CORS(app)  #
 
-from multiprocessing import Process, Queue
+from multiprocessing import Queue
 
 from airo_camera_toolkit.pinhole_operations.projection import project_points_to_image_plane
 from airo_dataset_tools.data_parsers.camera_intrinsics import CameraIntrinsics
@@ -109,6 +108,12 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/explore")
     def explore():
         root_dir = request.args.get("dir", ".")
+
+        static_dir = os.path.abspath("./static")
+        # check if root_dir is within static_dir
+        if not os.path.normpath(os.path.abspath(root_dir)).startswith(static_dir):
+            return "Invalid directory"
+
         if os.path.isdir(root_dir):
             files = sorted(os.listdir(root_dir))
             return render_template("explorer.html", root=root_dir, files=files)
@@ -211,6 +216,12 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
 
         return jsonify(coverage)
 
+    @app.route("/api/teams", methods=["GET"])
+    def get_teams():
+        dataset_dir = scenes_directory
+        teams = sorted(os.listdir(dataset_dir))
+        return jsonify({"teams": teams})
+
     @app.route("/api/scenes", methods=["GET"])
     def get_scenes():
         scene_names = sorted(os.listdir(scenes_directory))
@@ -281,19 +292,19 @@ if __name__ == "__main__":
     q = Queue()
     ack = Queue()
 
-    p = Process(
-        target=sam_worker,
-        args=(
-            q,
-            ack,
-            args,
-        ),
-    )
-    p.start()
+    # p = Process(
+    #     target=sam_worker,
+    #     args=(
+    #         q,
+    #         ack,
+    #         args,
+    #     ),
+    # )
+    # p.start()
 
     queued_scenes = set()
 
     app = create_app(args.scenes_directory, q, ack, queued_scenes)
     app.run(debug=True, host="0.0.0.0", use_reloader=False)
 
-    p.join()
+    # p.join()
