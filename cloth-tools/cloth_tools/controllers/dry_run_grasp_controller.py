@@ -108,7 +108,7 @@ class DryRunGraspController(Controller):
                 time.sleep(1.0)
                 continue
 
-            grasp_files = sorted(list(files_to_consider), reverse=True)
+            grasp_files = sorted(list(files_to_consider), reverse=False)
             latest_file = grasp_files[0]
 
             logger.info(f"Trying grasp pose from: {latest_file}")
@@ -169,6 +169,10 @@ class DryRunGraspController(Controller):
                 else:
                     logger.warning("Grasp pose rejected.")
                     failed_files.add(latest_file)
+
+                    # TODO finish this
+                    input("Stop waiting and stretch?")
+
                     continue
 
             except Exception as e:
