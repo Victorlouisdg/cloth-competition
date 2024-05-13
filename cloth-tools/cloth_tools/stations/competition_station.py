@@ -31,9 +31,9 @@ def check_zed_point_cloud_completeness(camera: Zed2i):
     depth_image = camera._retrieve_depth_image()
 
     distances = np.linalg.norm(point_cloud.points, axis=1)
-    if not np.any(distances < 1.2):
+    if not np.any(distances < 1.4):
         print(distances)
-        logger.info("The point cloud is not complete, logging it to rerun.")
+        logger.info(f"The point cloud is not complete, logging it to rerun. Min distance = {np.min(distances)}")
         import rerun as rr
 
         rr.init("Competition Station - Point cloud", spawn=True)

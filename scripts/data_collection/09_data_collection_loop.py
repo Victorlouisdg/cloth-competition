@@ -27,7 +27,7 @@ if __name__ == "__main__":
     camera_intrinsics = camera.intrinsics_matrix()
     camera_resolution = camera.resolution
 
-    dataset_dir = Path("notebooks/data/cloth_competition_dataset_0002_dev")
+    dataset_dir = Path("notebooks/data/cloth_competition_dataset_0003_dev")
 
     while True:
         start_time = time.time()
