@@ -19,7 +19,7 @@ if __name__ == "__main__":
     rr.spawn(memory_limit="25%")
 
     current_team = "dev_team"
-    dataset_dir = Path(f"notebooks/data/dry_run_2024-05-13/{current_team}")
+    dataset_dir = Path(f"notebooks/data/evaluation_icra_2024/{current_team}")
 
     station = CompetitionStation()
     dual_arm = station.dual_arm

@@ -109,11 +109,11 @@ class DryRunGraspController(Controller):
                 continue
 
             grasp_files = sorted(list(files_to_consider), reverse=False)
-            latest_file = grasp_files[0]
+            oldest_file = grasp_files[0]
 
-            logger.info(f"Trying grasp pose from: {latest_file}")
+            logger.info(f"Trying grasp pose from: {oldest_file}")
 
-            filepath = os.path.join(grasps_dir, latest_file)
+            filepath = os.path.join(grasps_dir, oldest_file)
 
             try:
                 with open(filepath, "r") as f:
@@ -141,7 +141,7 @@ class DryRunGraspController(Controller):
 
                 logger.success(f"You can see the trajectory animation at: {scene_with_cloth.meshcat.web_url()}")
                 if get_grasp_confirmation(grasp_pose, observation):
-                    logger.success(f"Executing grasp pose from: {latest_file}")
+                    logger.success(f"Executing grasp pose from: {oldest_file}")
 
                     # TODO copy the successful grasp pose from grasps dir to the sample dir
                     grasp_dir = Path(self.sample_dir) / "grasp"
@@ -168,16 +168,18 @@ class DryRunGraspController(Controller):
                     return
                 else:
                     logger.warning("Grasp pose rejected.")
-                    failed_files.add(latest_file)
+                    failed_files.add(oldest_file)
 
                     # TODO finish this
-                    input("Stop waiting and stretch?")
+                    answer = input("Stop waiting and stretch? (y/n)")
 
+                    if answer == "y":
+                        return
                     continue
 
             except Exception as e:
-                failed_files.add(latest_file)
-                logger.warning(f"Cannot load/plan/execute {latest_file}: {e}")
+                failed_files.add(oldest_file)
+                logger.warning(f"Cannot load/plan/execute {oldest_file}: {e}")
                 time.sleep(0.0001)
                 continue
 

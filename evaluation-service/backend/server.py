@@ -212,14 +212,14 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/latest_observation_start_dir")
     def latest_observation_start_dir():
         # TODO make the team a command line argument, or search over all teams
-        sample_dir = find_latest_sample_dir_with_observation_start("static/data/dry_run_2024-05-13")
+        sample_dir = find_latest_sample_dir_with_observation_start("static/data/evaluation_icra_2024")
         observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
 
     @app.route("/dev_latest_observation_start_dir")
     def dev_latest_observation_start_dir():
         # TODO make the team a command line argument, or search over all teams
-        sample_dir = find_latest_sample_dir_with_observation_start("static/data/dry_run_2024-05-13/dev_team")
+        sample_dir = find_latest_sample_dir_with_observation_start("static/data/evaluation_icra_2024/dev_team")
         observation_start_dir = Path(sample_dir) / "observation_start"
         return str(observation_start_dir)
 
@@ -254,7 +254,7 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
         except Exception as e:
             return jsonify({"error": f"Invalid file: {e}"}), 400
 
-        current_upload_dir = "./static/data/dry_run_2024-05-13"
+        current_upload_dir = "./static/data/evaluation_icra_2024"
 
         # sample_id = "2024-04-26_00-00-00-000000"
         sample_id = request.form.get("sample_id")
