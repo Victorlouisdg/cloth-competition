@@ -98,12 +98,14 @@ def move_to_start_pose(station: CompetitionStation):
 
 if __name__ == "__main__":
     station = CompetitionStation()
-    dataset_dir = Path(ensure_dataset_dir("notebooks/data/cloth_competition_references_0001"))
+    dataset_dir = Path(ensure_dataset_dir("notebooks/data/cloth_competition_references_0002"))
 
     while True:
-        reference_index = find_highest_suffix(dataset_dir, "reference_observation") + 1
-        reference_dir = dataset_dir / f"reference_observation_{reference_index:06d}"
-        reference_dir.mkdir(parents=True, exist_ok=True)
+        sample_index = find_highest_suffix(dataset_dir, "sample") + 1
+
+        sample_dir = dataset_dir / f"sample_{sample_index:06d}"
+        observation_dir = sample_dir / "observation_result"
+        observation_dir.mkdir(parents=True, exist_ok=True)
 
         move_to_start_pose(station)
 
@@ -124,4 +126,4 @@ if __name__ == "__main__":
 
         # Save the reference observation
         observation_reference = collect_observation(station)
-        save_competition_observation(observation_reference, reference_dir)
+        save_competition_observation(observation_reference, observation_dir)
