@@ -308,6 +308,11 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/api/scenes", methods=["GET"])
     def get_scenes():
         scene_names = sorted(os.listdir(scenes_directory))
+        scene_names = [
+            scene_name
+            for scene_name in scene_names
+            if os.path.isdir(f"{scenes_directory}/{scene_name}") and scene_name.startswith("sample_")
+        ]
 
         logger.info(f"Found {len(scene_names)} in {os.path.abspath(scenes_directory)}")
 
@@ -459,6 +464,7 @@ if __name__ == "__main__":
     queued_scenes = set()
 
     app = create_app(args.scenes_directory, q, ack, queued_scenes)
-    app.run(debug=True, host="10.42.0.1", use_reloader=False)
+    app.run(debug=True, host="localhost", use_reloader=False)
+    # app.run(debug=True, host="10.42.0.1", use_reloader=False)
 
     p.join()
