@@ -100,88 +100,96 @@ class DryRunGraspController(Controller):
         failed_files = set()
 
         while True:
-            grasp_files = set(os.listdir(grasps_dir))
-            files_to_consider = grasp_files - failed_files
-
-            if not files_to_consider:
-                logger.info(f"No grasp poses received yet, waiting... (len(failed_files)={len(failed_files)}")
-                time.sleep(1.0)
-                continue
-
-            grasp_files = sorted(list(files_to_consider), reverse=False)
-            oldest_file = grasp_files[0]
-
-            logger.info(f"Trying grasp pose from: {oldest_file}")
-
-            filepath = os.path.join(grasps_dir, oldest_file)
-
             try:
-                with open(filepath, "r") as f:
-                    grasp_pose = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+                grasp_files = set(os.listdir(grasps_dir))
+                files_to_consider = grasp_files - failed_files
 
-                trajectory_pregrasp_and_grasp = plan_pregrasp_and_grasp_trajectory(
-                    planner_pregrasp,
-                    grasp_pose,
-                    observation.arm_left_joints,
-                    observation.arm_right_joints,
-                    inverse_kinematics_left_fn,
-                    inverse_kinematics_right_fn,
-                    collision_checker_no_cloth.CheckConfigCollisionFree,
-                    scene.robot_diagram.plant(),
-                    with_left=False,
-                )
-
-                animate_dual_joint_trajectory(
-                    scene_with_cloth.meshcat,
-                    scene_with_cloth.robot_diagram,
-                    scene_with_cloth.arm_left_index,
-                    scene_with_cloth.arm_right_index,
-                    trajectory_pregrasp_and_grasp,
-                )
-
-                logger.success(f"You can see the trajectory animation at: {scene_with_cloth.meshcat.web_url()}")
-                if get_grasp_confirmation(grasp_pose, observation):
-                    logger.success(f"Executing grasp pose from: {oldest_file}")
-
-                    # TODO copy the successful grasp pose from grasps dir to the sample dir
-                    grasp_dir = Path(self.sample_dir) / "grasp"
-                    grasp_dir.mkdir(parents=True, exist_ok=True)
-                    grasp_pose_file = grasp_dir / "grasp_pose.json"
-                    # copy filepath to grasp_pose_file
-                    shutil.copy2(filepath, grasp_pose_file)
-
-                    # TODO also save image with grasp
-                    image_copy = observation.image_left.copy()
-                    image_annotated = cv2.cvtColor(image_copy, cv2.COLOR_RGB2BGR)
-                    draw_pose(
-                        image_annotated, grasp_pose, observation.camera_intrinsics, observation.camera_pose_in_world
-                    )
-
-                    grasp_image_file = grasp_dir / "frontal_image_grasp.jpg"
-                    cv2.imwrite(str(grasp_image_file), image_annotated)
-
-                    # Execute the grasp
-                    dual_arm = self.station.dual_arm
-                    execute_dual_arm_drake_trajectory(dual_arm, trajectory_pregrasp_and_grasp)
-                    dual_arm.right_manipulator.gripper.close().wait()
-
-                    return
-                else:
-                    logger.warning("Grasp pose rejected.")
-                    failed_files.add(oldest_file)
-
-                    # TODO finish this
-                    answer = input("Stop waiting and stretch? (y/n)")
-
-                    if answer == "y":
-                        return
+                if not files_to_consider:
+                    logger.info(f"No grasp poses received yet, waiting... (len(failed_files)={len(failed_files)}")
+                    time.sleep(1.0)
                     continue
 
-            except Exception as e:
-                failed_files.add(oldest_file)
-                logger.warning(f"Cannot load/plan/execute {oldest_file}: {e}")
-                time.sleep(0.0001)
-                continue
+                grasp_files = sorted(list(files_to_consider), reverse=False)
+                oldest_file = grasp_files[0]
+
+                logger.info(f"Trying grasp pose from: {oldest_file}")
+
+                filepath = os.path.join(grasps_dir, oldest_file)
+
+                try:
+                    with open(filepath, "r") as f:
+                        grasp_pose = Pose.model_validate_json(f.read()).as_homogeneous_matrix()
+
+                    trajectory_pregrasp_and_grasp = plan_pregrasp_and_grasp_trajectory(
+                        planner_pregrasp,
+                        grasp_pose,
+                        observation.arm_left_joints,
+                        observation.arm_right_joints,
+                        inverse_kinematics_left_fn,
+                        inverse_kinematics_right_fn,
+                        collision_checker_no_cloth.CheckConfigCollisionFree,
+                        scene.robot_diagram.plant(),
+                        with_left=False,
+                    )
+
+                    animate_dual_joint_trajectory(
+                        scene_with_cloth.meshcat,
+                        scene_with_cloth.robot_diagram,
+                        scene_with_cloth.arm_left_index,
+                        scene_with_cloth.arm_right_index,
+                        trajectory_pregrasp_and_grasp,
+                    )
+
+                    logger.success(f"You can see the trajectory animation at: {scene_with_cloth.meshcat.web_url()}")
+                    if get_grasp_confirmation(grasp_pose, observation):
+                        logger.success(f"Executing grasp pose from: {oldest_file}")
+
+                        # TODO copy the successful grasp pose from grasps dir to the sample dir
+                        grasp_dir = Path(self.sample_dir) / "grasp"
+                        grasp_dir.mkdir(parents=True, exist_ok=True)
+                        grasp_pose_file = grasp_dir / "grasp_pose.json"
+                        # copy filepath to grasp_pose_file
+                        shutil.copy2(filepath, grasp_pose_file)
+
+                        # TODO also save image with grasp
+                        image_copy = observation.image_left.copy()
+                        image_annotated = cv2.cvtColor(image_copy, cv2.COLOR_RGB2BGR)
+                        draw_pose(
+                            image_annotated,
+                            grasp_pose,
+                            observation.camera_intrinsics,
+                            observation.camera_pose_in_world,
+                        )
+
+                        grasp_image_file = grasp_dir / "frontal_image_grasp.jpg"
+                        cv2.imwrite(str(grasp_image_file), image_annotated)
+
+                        # Execute the grasp
+                        dual_arm = self.station.dual_arm
+                        execute_dual_arm_drake_trajectory(dual_arm, trajectory_pregrasp_and_grasp)
+                        dual_arm.right_manipulator.gripper.close().wait()
+
+                        return
+                    else:
+                        logger.warning("Grasp pose rejected.")
+                        failed_files.add(oldest_file)
+
+                        # TODO finish this
+                        answer = input("Stop waiting and stretch? (y/n)")
+
+                        if answer == "y":
+                            break
+                        continue
+
+                except Exception as e:
+                    failed_files.add(oldest_file)
+                    logger.warning(f"Cannot load/plan/execute {oldest_file}: {e}")
+                    time.sleep(0.0001)
+                    continue
+            except KeyboardInterrupt:
+                logger.warning("Keyboard interrupt.")
+                return
+        return
 
     def execute(self) -> None:
         logger.info(f"{self.__class__.__name__} started.")

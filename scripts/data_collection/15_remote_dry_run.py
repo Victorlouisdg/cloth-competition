@@ -18,7 +18,7 @@ if __name__ == "__main__":
     rr.init("Remote dry run")
     rr.spawn(memory_limit="25%")
 
-    current_team = "dev_team"
+    current_team = "SCUT-ROBOT"
     dataset_dir = Path(f"notebooks/data/evaluation_icra_2024/{current_team}")
 
     station = CompetitionStation()

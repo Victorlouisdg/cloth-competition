@@ -308,6 +308,9 @@ def create_app(scenes_directory, q, ack, queued_scenes):  # noqa C901
     @app.route("/api/scenes", methods=["GET"])
     def get_scenes():
         scene_names = sorted(os.listdir(scenes_directory))
+
+        logger.info(f"Found {len(scene_names)} in {os.path.abspath(scenes_directory)}")
+
         scenes_info = []
 
         for scene_name in scene_names:
