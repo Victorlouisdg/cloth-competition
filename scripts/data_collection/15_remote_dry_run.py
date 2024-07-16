@@ -18,8 +18,19 @@ if __name__ == "__main__":
     rr.init("Remote dry run")
     rr.spawn(memory_limit="25%")
 
-    current_team = "SCUT-ROBOT"
-    dataset_dir = Path(f"notebooks/data/evaluation_icra_2024/{current_team}")
+    team_name = "AIR_JNU"
+    # team_name = "Shibata_Lab"
+    # team_name = "ai_robot"
+    # team_name = "Ewha_Glab"
+    # team_name = "3c1s"
+    # team_name = "Team_Ljubljana"
+    # team_name = "SCUT-ROBOT"
+    # team_name = "UOS_robotics"
+    # team_name = "SRCB-Test"
+    # team_name = "test_greater_bay"
+    # team_name = "AIS_team"
+
+    dataset_dir = Path(f"notebooks/data/evaluation_icra_2024/{team_name}")
 
     station = CompetitionStation()
     dual_arm = station.dual_arm
