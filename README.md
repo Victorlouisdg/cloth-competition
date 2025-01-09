@@ -4,7 +4,7 @@
 
 Official repository for the [ICRA 2024 Cloth Competition :shirt:](https://airo.ugent.be/cloth_competition/).
 
-The dataset can be found [here](https://cloud.ilabt.imec.be/index.php/s/Sy945rbamg8JMgR).
+The dataset (83.0 GB) can be found [on Zenodo](https://zenodo.org/records/14621179).
 
 For general questions about the competition, please use our [Github Discussions page](https://github.com/Victorlouisdg/cloth-competition/discussions).
 ## Getting started
